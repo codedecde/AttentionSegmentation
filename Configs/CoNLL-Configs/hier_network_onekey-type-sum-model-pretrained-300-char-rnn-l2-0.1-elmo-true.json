@@ -1,0 +1,112 @@
+{
+  "base_output_dir": "./Experiments/CoNLL/HAN-ELMO-Experiments",
+  "dataset_reader": {
+    "type": "FIXME:READER_TYPE",
+    "label_indexer": "FIXME:LABEL_INDEXER_TYPE",
+    "tag_label": "labels",
+    "lowercase": true,
+	  "max_word_len": 50,
+  	"token_indexers": {
+  		"tokens": {
+  			"type": "single_id",
+  			"lowercase_tokens": true,
+  			"namespace": "token_ids"
+  		},
+  		"chars": {
+  			"type": "characters",
+  			"namespace": "token_chars"
+  		},
+  		"elmo": {
+  			 "type": "elmo_characters"
+  		}
+	 }
+  },
+  "train_data_path": "FIXME:TODO",
+  "validation_data_path": "FIXME:TODO",
+  "test_data_path": "FIXME:TODO",
+  "evaluate_on_test": true,
+  "max_seq_len": 300,
+  "model": {
+    "type": "HierAttnNetworkClassifier",
+    "label_indexer": "FIXME:LABEL_INDEXER_TYPE",
+    "text_field_embedder": {
+      "tokens": {
+        "type": "embedding",
+        "vocab_namespace": "token_ids",
+        "embedding_dim": 300,
+        "pretrained_file": "./Data/embeddings/GloveEmbeddings/glove.6B.300d.txt.gz",
+        "trainable": true
+      },
+      "chars": {
+        "type": "character_encoding",
+        "embedding": {
+          "vocab_namespace": "token_chars",
+          "embedding_dim": 50 
+        },
+        "encoder": {
+          "type": "gru",
+          "input_size": 50,
+          "hidden_size": 80,
+          "num_layers": 2,
+          "dropout": 0.25,
+          "bidirectional": true
+        }
+      },
+	  "elmo": {
+		  "type": "elmo_token_embedder",
+		  "options_file": "./Data/embeddings/ELMOEmbeddings/elmo_2x4096_512_2048cnn_2xhighway_options.json",
+		  "weight_file": "./Data/embeddings/ELMOEmbeddings/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5",
+		  "do_layer_norm": false,
+		  "dropout": 0.0
+	  }
+    },
+    "encoder_word": {
+      "type": "gru",
+      "input_size": 1484,
+      "hidden_size": 150,
+      "num_layers": 1,
+      "dropout": 0.5,
+      "bidirectional": true
+    },
+    "attention_word":{
+      "type": "KeyedAttention",
+      "key_emb_size": 300,
+      "ctxt_emb_size": 300,
+      "attn_type": "sum"
+    },
+    "encoder_sent": {
+      "type": "gru",
+      "input_size": 300,
+      "hidden_size": 150,
+      "num_layers": 1,
+      "dropout": 0.5,
+      "bidirectional": true
+    },
+    "attention_sent":{
+      "type": "KeyedAttention",
+      "key_emb_size": 300,
+      "ctxt_emb_size": 300,
+      "attn_type": "sum"
+    },
+    "dropout": 0.5
+  },
+  "iterator": {
+    "type": "bucket",
+    "sorting_keys": [["tokens", "num_tokens"]],
+    "padding_noise": 0.1,
+    "batch_size": 32
+  },
+  "trainer": {
+    "optimizer": "adam",
+    "num_epochs": 50,
+    "patience": 10,
+    "cuda_device": 0,
+    "validation_metric": "+fscore",
+    "num_serialized_models_to_keep": 1,
+    "learning_rate_scheduler": {
+      "type": "reduce_on_plateau",
+      "factor" : 0.5,
+      "patience" : 5
+      }
+  }
+}
