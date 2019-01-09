@@ -17,18 +17,18 @@ from torch.nn.parallel.scatter_gather import scatter_kwargs, gather
 from tensorboardX import SummaryWriter
 
 
-from allennlp.common import Params
-from allennlp.common.checks import ConfigurationError
-from allennlp.common.util import peak_memory_mb, gpu_memory_mb
-from allennlp.common.tqdm import Tqdm
-from allennlp.data.instance import Instance
-from allennlp.data.iterators.data_iterator import DataIterator
-from allennlp.models.model import Model
-from allennlp.nn import util
-from allennlp.training.learning_rate_schedulers import LearningRateScheduler
-from allennlp.training.optimizers import Optimizer
+from AttentionSegmentation.allennlp.common import Params
+from AttentionSegmentation.allennlp.common.checks import ConfigurationError
+from AttentionSegmentation.allennlp.common.util import peak_memory_mb, gpu_memory_mb
+from AttentionSegmentation.allennlp.common.tqdm import Tqdm
+from AttentionSegmentation.allennlp.data.instance import Instance
+from AttentionSegmentation.allennlp.data.iterators.data_iterator import DataIterator
+from AttentionSegmentation.allennlp.models.model import Model
+from AttentionSegmentation.allennlp.nn import util
+from AttentionSegmentation.allennlp.training.learning_rate_schedulers import LearningRateScheduler
+from AttentionSegmentation.allennlp.training.optimizers import Optimizer
 
-from commons.trainer_utils import is_sparse,\
+from AttentionSegmentation.commons.trainer_utils import is_sparse,\
     sparse_clip_norm, move_optimizer_to_cuda, TensorboardWriter
 logger = logging.getLogger(__name__)
 
@@ -264,6 +264,7 @@ class Trainer(object):
             self._batch_num_total = 0
 
         for batch in train_generator_tqdm:
+            import pdb; pdb.set_trace()
             batches_this_epoch += 1
             self._batch_num_total += 1
             batch_num_total = self._batch_num_total

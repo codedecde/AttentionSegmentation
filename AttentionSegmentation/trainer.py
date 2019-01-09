@@ -7,9 +7,9 @@ import numpy as np
 import logging
 import re
 
-from allennlp.nn import util
-from allennlp.common.tqdm import Tqdm
-import commons.trainer as common_trainer
+from AttentionSegmentation.allennlp.nn import util
+from AttentionSegmentation.allennlp.common.tqdm import Tqdm
+import AttentionSegmentation.commons.trainer as common_trainer
 
 logger = logging.getLogger(__name__)
 

@@ -1,11 +1,12 @@
+// from allennlp.data.dataset_readers.conll2003 import Conll2003DatasetReader as R
+// conll_reader = R(lazy=True)
+// conll_reader.read('/zfsauton3/home/bpatra/AttentionSegmentation/test.txt')
 {
   "base_output_dir": "./Experiments/CoNLL/HAN-ELMO-Experiments",
   "dataset_reader": {
-    "type": "FIXME:READER_TYPE",
-    "label_indexer": "FIXME:LABEL_INDEXER_TYPE",
-    "tag_label": "labels",
-    "lowercase": true,
-	  "max_word_len": 50,
+    "type": "Conll2003DatasetReader",
+    "tag_label": "ner",
+    "feature_labels": ["pos", "chunk"],
   	"token_indexers": {
   		"tokens": {
   			"type": "single_id",
@@ -21,11 +22,10 @@
   		}
 	 }
   },
-  "train_data_path": "FIXME:TODO",
-  "validation_data_path": "FIXME:TODO",
-  "test_data_path": "FIXME:TODO",
+  "train_data_path": "./Data/CoNLLData/train.txt",
+  "validation_data_path": "./Data/CoNLLData/valid.txt",
+  "test_data_path": "./Data/CoNLLData/test.txt",
   "evaluate_on_test": true,
-  "max_seq_len": 300,
   "model": {
     "type": "HierAttnNetworkClassifier",
     "label_indexer": "FIXME:LABEL_INDEXER_TYPE",
@@ -100,7 +100,7 @@
     "optimizer": "adam",
     "num_epochs": 50,
     "patience": 10,
-    "cuda_device": 0,
+    "cuda_device": -1,
     "validation_metric": "+fscore",
     "num_serialized_models_to_keep": 1,
     "learning_rate_scheduler": {
