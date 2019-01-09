@@ -1,6 +1,4 @@
-// from allennlp.data.dataset_readers.conll2003 import Conll2003DatasetReader as R
-// conll_reader = R(lazy=True)
-// conll_reader.read('/zfsauton3/home/bpatra/AttentionSegmentation/test.txt')
+// python3 -m AttentionSegmentation.main --config_file Configs/CoNLL-Configs/hier_network_onekey-type-sum-model-pretrained-300-char-rnn-l2-0.1-elmo-true.json
 {
   "base_output_dir": "./Experiments/CoNLL/HAN-ELMO-Experiments",
   "dataset_reader": {
