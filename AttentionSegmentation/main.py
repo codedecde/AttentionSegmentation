@@ -10,7 +10,8 @@ import torch.nn as nn
 
 from AttentionSegmentation.allennlp.data import Vocabulary
 from AttentionSegmentation.allennlp.data.iterators import DataIterator
-import AttentionSegmentation.allennlp.data.dataset_readers as Readers
+# import AttentionSegmentation.allennlp.data.dataset_readers as Readers
+import AttentionSegmentation.reader as Readers
 
 # import model as Models
 from AttentionSegmentation.trainer import Trainer

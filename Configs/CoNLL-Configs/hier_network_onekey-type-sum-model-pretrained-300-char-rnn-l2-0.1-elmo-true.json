@@ -2,8 +2,13 @@
 {
   "base_output_dir": "./Experiments/CoNLL/HAN-ELMO-Experiments",
   "dataset_reader": {
-    "type": "Conll2003DatasetReader",
+    // "type": "Conll2003DatasetReader",
+    "type": "WeakConll2003DatasetReader",
     "tag_label": "ner",
+    "label_indexer": {
+        "label_namespace": "labels",
+        "tags": ["PER", "LOC"]
+    },
     "feature_labels": ["pos", "chunk"],
   	"token_indexers": {
   		"tokens": {
