@@ -9,6 +9,7 @@ import datetime
 import traceback
 import numpy as np
 from typing import Dict, Optional, List, Tuple, Union, Iterable, Any, Set
+import pdb
 
 import torch
 import torch.optim.lr_scheduler
@@ -264,7 +265,6 @@ class Trainer(object):
             self._batch_num_total = 0
 
         for batch in train_generator_tqdm:
-            import pdb; pdb.set_trace()
             batches_this_epoch += 1
             self._batch_num_total += 1
             batch_num_total = self._batch_num_total

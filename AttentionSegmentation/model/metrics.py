@@ -8,27 +8,23 @@ import seaborn as sn
 
 from allennlp.training.metrics.metric import Metric
 
-# FIXME: Implement this
-from preprocess.label_indices \
-    import LabelIndicesBiMap, CondensedLabelIndicesBiMap
-
 
 class ClassificationMetrics(Metric):
     def __init__(self, num_labels, label_indexer):
         self.num_labels = num_labels
-        self.label_indexer = eval(label_indexer)
+        self.label_indexer = label_indexer
         super(ClassificationMetrics, self).__init__()
         self.setUp()
 
     def setUp(self):
         self._counts = OrderedDict()
-        for label in self.label_indexer.label2ix:
+        for label in self.tags2ix.label2ix:
             ix = self.label_indexer.lookup(label)
             if ix == self.num_labels:
                 break
             self._counts[ix] = {'tp': 0, 'fp': 0, 'tn': 0, 'fn': 0}
 
-    def _update_counts(self, pred: float, gold: float, lbl: int):
+    def _update_counts(self, pred: int, gold: int, lbl: int):
         assert isinstance(pred, int)
         assert isinstance(gold, int)
         assert isinstance(lbl, int)

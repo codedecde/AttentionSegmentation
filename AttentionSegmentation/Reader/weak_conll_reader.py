@@ -1,18 +1,43 @@
 from typing import Dict, List, Sequence, Iterable
 import itertools
 import logging
+import logging
 
 from overrides import overrides
 
-from allennlp.data.dataset_readers.dataset_reader import DatasetReader
-from allennlp.data.dataset_readers.conll2003 import Conll2003DatasetReader
-from allennlp.data.instance import Instance
-from allennlp.data.token_indexers import TokenIndexer
-from allennlp.data.tokenizers import Token
-from allennlp.data.fields.multilabel_field import MultiLabelField
+from AttentionSegmentation.allennlp.common import Params
+from AttentionSegmentation.allennlp.data.dataset_readers.dataset_reader \
+    import DatasetReader
+from AttentionSegmentation.allennlp.common.checks import ConfigurationError
+from AttentionSegmentation.allennlp.data.dataset_readers \
+    import Conll2003DatasetReader, DatasetReader
+from AttentionSegmentation.allennlp.data.instance import Instance
+from AttentionSegmentation.allennlp.data.token_indexers import TokenIndexer
+from AttentionSegmentation.allennlp.data.tokenizers import Token
+from AttentionSegmentation.allennlp.data.fields \
+    import MultiLabelField, TextField, SequenceLabelField
+from AttentionSegmentation.reader.label_indexer import LabelIndexer
 
-@DatasetReader.register("weak_conll2003")
-class WeakConll2003DatasetReader(Conll2003DatasetReader):
+
+logger = logging.getLogger(__name__)
+
+
+def _is_divider(line: str) -> bool:
+    empty_line = line.strip() == ''
+    if empty_line:
+        return True
+    else:
+        first_token = line.split()[0]
+        if first_token == "-DOCSTART-":  # pylint: disable=simplifiable-if-statement
+            return True
+        else:
+            return False
+
+
+_VALID_LABELS = {'ner', 'pos', 'chunk'}
+
+
+class WeakConll2003DatasetReader(DatasetReader):
     """
     Reader for Conll 2003 dataset. Almost identical to AllenNLP's Conll2003DatasetReader, except that it
     returns an additional MultiLabelField that represents which NER tags were present in the sentence in 
@@ -40,25 +65,112 @@ class WeakConll2003DatasetReader(Conll2003DatasetReader):
     label_namespace: ``str``, optional (default=``labels``)
         Specifies the namespace for the chosen ``tag_label``.
     """
+
     def __init__(self,
                  token_indexers: Dict[str, TokenIndexer] = None,
                  tag_label: str = "ner",
                  feature_labels: Sequence[str] = (),
                  lazy: bool = False,
                  coding_scheme: str = "IOB1",
-                 label_namespace: str = "labels") -> None:
-        super().__init__(token_indexers, tag_label, feature_labels, lazy, coding_scheme, label_namespace)
+                 label_indexer: LabelIndexer = None) -> None:
+        super(WeakConll2003DatasetReader, self).__init__(lazy)
+        self._token_indexers = token_indexers or {
+            'tokens': SingleIdTokenIndexer()}
+        if tag_label is not None and tag_label not in _VALID_LABELS:
+            raise ConfigurationError("unknown tag label type: {}".format(
+                tag_label))
+        for label in feature_labels:
+            if label not in _VALID_LABELS:
+                raise ConfigurationError(
+                    "unknown feature label type: {}".format(label))
+        if coding_scheme not in ("IOB1", "BIOUL"):
+            raise ConfigurationError(
+                "unknown coding_scheme: {}".format(coding_scheme))
+
+        self.tag_label = tag_label
+        self.feature_labels = set(feature_labels)
+        self.coding_scheme = coding_scheme
+
+        self.label_indexer = label_indexer
+
+    def get_label_indexer(self):
+        return self.label_indexer
 
     @overrides
-    def text_to_instance(self, # type: ignore
-                         tokens: List[Token],
-                         pos_tags: List[str] = None,
-                         chunk_tags: List[str] = None,
-                         ner_tags: List[str] = None) -> Instance:
-        conll_instance = super().text_to_instance(tokens, pos_tags, chunk_tags, ner_tags)
+    def _read(self, file_path: str) -> Iterable[Instance]:
+        # if `file_path` is a URL, redirect to the cache
+        with open(file_path, "r") as data_file:
+            logger.info(
+                "Reading instances from lines in file at: %s", file_path)
 
-        # TODO:
-        ner_label_list = []
+            # Group into alternative divider / sentence chunks.
+            for is_divider, lines in itertools.groupby(data_file, _is_divider):
+                # Ignore the divider chunks, so that `lines`
+                # corresponds to the words of a single sentence.
+                if not is_divider:
+                    fields = [line.strip().split() for line in lines]
+                    # unzipping trick returns tuples, but our Fields need lists
+                    tokens, pos_tags, chunk_tags, ner_tags = [
+                        list(field) for field in zip(*fields)
+                    ]
+                    # TextField requires ``Token`` objects
+                    tokens = [Token(token) for token in tokens]
+                    sequence = TextField(tokens, self._token_indexers)
 
-        weak_ner_labels = MultiLabelField(ner_label_list, "weak_ner_labels")
-        conll_instance.add_field(weak_ner_labels)
+                    instance_fields: Dict[str, Field] = {'tokens': sequence}
+
+                    # Recode the labels if necessary.
+                    if self.coding_scheme == "BIOUL":
+                        coded_chunks = iob1_to_bioul(chunk_tags)
+                        coded_ner = iob1_to_bioul(ner_tags)
+                    else:
+                        # the default IOB1
+                        coded_chunks = chunk_tags
+                        coded_ner = ner_tags
+
+                    # Add "feature labels" to instance
+                    if 'pos' in self.feature_labels:
+                        instance_fields['pos_tags'] = SequenceLabelField(
+                            pos_tags, sequence, "pos_tags")
+                    if 'chunk' in self.feature_labels:
+                        instance_fields['chunk_tags'] = SequenceLabelField(
+                            coded_chunks, sequence, "chunk_tags")
+                    if 'ner' in self.feature_labels:
+                        instance_fields['ner_tags'] = SequenceLabelField(
+                            coded_ner, sequence, "ner_tags")
+
+                    # Add "tag label" to instance
+                    if self.tag_label == 'ner':
+                        instance_fields['tags'] = SequenceLabelField(
+                            coded_ner, sequence)
+                    elif self.tag_label == 'pos':
+                        instance_fields['tags'] = SequenceLabelField(
+                            pos_tags, sequence)
+                    elif self.tag_label == 'chunk':
+                        instance_fields['tags'] = SequenceLabelField(
+                            coded_chunks, sequence)
+                    if self.label_indexer is not None:
+                        instance_fields["labels"] = self.label_indexer.index(
+                            ner_tags, as_label_field=True)
+                    yield Instance(instance_fields)
+
+    @classmethod
+    @overrides
+    def from_params(cls, params: Params) -> 'WeakConll2003DatasetReader':
+        token_indexers = TokenIndexer.dict_from_params(
+            params.pop('token_indexers', {}))
+        tag_label = params.pop('tag_label', None)
+        feature_labels = params.pop('feature_labels', ())
+        lazy = params.pop('lazy', False)
+        coding_scheme = params.pop('coding_scheme', 'IOB1')
+        label_indexer_params = params.pop('label_indexer', None)
+        label_indexer = None
+        if label_indexer_params is not None:
+            label_indexer = LabelIndexer.from_params(label_indexer_params)
+        params.assert_empty(cls.__name__)
+        return WeakConll2003DatasetReader(token_indexers=token_indexers,
+                                          tag_label=tag_label,
+                                          feature_labels=feature_labels,
+                                          lazy=lazy,
+                                          coding_scheme=coding_scheme,
+                                          label_indexer=label_indexer)

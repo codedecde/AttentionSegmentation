@@ -5,7 +5,7 @@ from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
 
-from allennlp.common.params import Params
+from AttentionSegmentation.allennlp.common.params import Params
 
 
 class BaseAttention(nn.Module):
@@ -47,6 +47,88 @@ class BaseAttention(nn.Module):
         """The input embedding size
         """
         return self.input_emb_size
+
+
+class KeyedAttention(BaseAttention):
+    """Computes a single attention distribution,
+    based on a learned key.
+
+    Arguments:
+        key_dim (int): The size of the key
+        ctxt_dim (int): The size of the context
+        attn_type (str): ("sum"|"dot") The type of
+            attention mechanism. "sum" is the usual
+            Bahdanau model of attention, while
+            "dot" is the dot product
+
+    """
+
+    def __init__(self, key_dim, ctxt_dim, attn_type, dropout=0.5):
+        super(KeyedAttention, self).__init__(
+            input_emb_size=ctxt_dim,
+            key_emb_size=key_dim,
+            output_emb_size=ctxt_dim
+        )
+        self.attn_type = attn_type
+        self.proj_ctxt = nn.Linear(ctxt_dim, key_dim)
+        self.key = nn.Parameter(torch.Tensor(key_dim, 1).uniform_(-0.01, 0.01))
+        self.dropout = dropout
+        # TODO: Implement dropout for keyed attention
+        if self.attn_type == "sum":
+            self.proj_ctxt_key_matrix = nn.Linear(key_dim, 1)
+
+    def forward(self, context, mask):
+        """The forward pass
+
+        Arguments:
+            context (``torch.Tensor``):
+                batch x seq_len x embed_dim: The Context
+            mask (``torch.LongTensor``):
+                batch x seq_len: The context mask
+        Returns:
+            (``torch.Tensor``, ``torch.Tensor``)
+
+            weighed_emb: batch x output_embed_size:
+            The attention weighted embeddings
+
+            attn_weights: batch x seq_len
+            The attention weights
+
+        """
+        proj_ctxt = self.proj_ctxt(context)  # batch x seq_len x key_dim
+        if self.attn_type == "dot":
+            batch, seq_len, key_dim = proj_ctxt.size()
+            scores = torch.mm(proj_ctxt.view(-1, key_dim), self.key)
+            logits = scores.contiguous().view(batch, seq_len)
+        elif self.attn_type == "sum":
+            batch, seq_len, key_dim = proj_ctxt.size()
+            expanded_key = self.key.transpose(0, 1).expand(batch, seq_len, -1)
+            ctxt_key_matrix = F.tanh(expanded_key + proj_ctxt)
+            logits = self.proj_ctxt_key_matrix(ctxt_key_matrix).squeeze(-1)
+        if mask is not None:
+            float_mask = mask.float()
+            negval = -10e5
+            logits = (float_mask * logits) + ((1 - float_mask) * negval)
+        attn_weights = F.softmax(logits, -1).unsqueeze(1)
+        weighted_emb = torch.bmm(attn_weights, context).squeeze(1)
+
+        return weighted_emb, attn_weights.squeeze(1)
+
+    @classmethod
+    def from_params(cls, params: Params):
+        """Construct from ``Params``
+        """
+        key_dim = params.pop("key_emb_size")
+        ctxt_emb_size = params.pop("ctxt_emb_size")
+        attn_type = params.pop("attn_type")
+        dropout = params.pop("dropout", 0.0)
+        params.assert_empty(cls.__name__)
+        return cls(
+            key_dim=key_dim,
+            ctxt_dim=ctxt_emb_size,
+            attn_type=attn_type,
+            dropout=dropout)
+
 
 
 class DotAttention(BaseAttention):
@@ -289,80 +371,3 @@ class BahdanauAttention(BaseAttention):
             ctxt_emb_size=ctxt_emb_size,
             num_labels=num_labels
         )
-
-
-class KeyedAttention(BaseAttention):
-    """Computes a single attention distribution,
-    based on a learned key.
-
-    Arguments:
-        key_dim (int): The size of the key
-        ctxt_dim (int): The size of the context
-        attn_type (str): ("sum"|"dot") The type of
-            attention mechanism. "sum" is the usual
-            Bahdanau model of attention, while
-            "dot" is the dot product
-
-    """
-
-    def __init__(self, key_dim, ctxt_dim, attn_type):
-        super(KeyedAttention, self).__init__(
-            input_emb_size=ctxt_dim,
-            key_emb_size=key_dim,
-            output_emb_size=ctxt_dim
-        )
-        self.attn_type = attn_type
-        self.proj_ctxt = nn.Linear(ctxt_dim, key_dim)
-        self.key = nn.Parameter(torch.Tensor(key_dim, 1).uniform_(-0.01, 0.01))
-        if self.attn_type == "sum":
-            self.proj_ctxt_key_matrix = nn.Linear(key_dim, 1)
-
-    def forward(self, context, mask):
-        """The forward pass
-
-        Arguments:
-            context (``torch.Tensor``):
-                batch x seq_len x embed_dim: The Context
-            mask (``torch.LongTensor``):
-                batch x seq_len: The context mask
-        Returns:
-            (``torch.Tensor``, ``torch.Tensor``)
-
-            weighed_emb: batch x output_embed_size:
-            The attention weighted embeddings
-
-            attn_weights: batch x seq_len
-            The attention weights
-
-        """
-        proj_ctxt = self.proj_ctxt(context)  # batch x seq_len x key_dim
-        if self.attn_type == "dot":
-            batch, seq_len, key_dim = proj_ctxt.size()
-            scores = torch.mm(proj_ctxt.view(-1, key_dim), self.key)
-            logits = scores.contiguous().view(batch, seq_len)
-        elif self.attn_type == "sum":
-            batch, seq_len, key_dim = proj_ctxt.size()
-            expanded_key = self.key.transpose(0, 1).expand(batch, seq_len, -1)
-            ctxt_key_matrix = F.tanh(expanded_key + proj_ctxt)
-            logits = self.proj_ctxt_key_matrix(ctxt_key_matrix).squeeze(-1)
-        if mask is not None:
-            float_mask = mask.float()
-            negval = -10e5
-            logits = (float_mask * logits) + ((1 - float_mask) * negval)
-        attn_weights = F.softmax(logits, -1).unsqueeze(1)
-        weighted_emb = torch.bmm(attn_weights, context).squeeze(1)
-
-        return weighted_emb, attn_weights.squeeze(1)
-
-    @classmethod
-    def from_params(cls, params: Params):
-        """Construct from ``Params``
-        """
-        key_dim = params.pop("key_emb_size")
-        ctxt_emb_size = params.pop("ctxt_emb_size")
-        attn_type = params.pop("attn_type")
-        params.assert_empty(cls.__name__)
-        return cls(
-            key_dim=key_dim,
-            ctxt_dim=ctxt_emb_size,
-            attn_type=attn_type)

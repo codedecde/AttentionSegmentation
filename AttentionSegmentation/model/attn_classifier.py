@@ -9,27 +9,24 @@ from overrides import overrides
 from typing import Dict, Optional
 from collections import OrderedDict
 
-import allennlp.nn.util as util
-from allennlp.common.params import Params
-from allennlp.models.model import Model
-from allennlp.nn import InitializerApplicator, RegularizerApplicator
-from allennlp.modules import Seq2SeqEncoder, TextFieldEmbedder
-from allennlp.data import Vocabulary
-from allennlp.common.checks import check_dimensions_match
-from allennlp.training.metrics import Average
+import AttentionSegmentation.allennlp.nn.util as util
+from AttentionSegmentation.allennlp.common.params import Params
+from AttentionSegmentation.allennlp.models.model import Model
+from AttentionSegmentation.allennlp.nn import InitializerApplicator, RegularizerApplicator
+from AttentionSegmentation.allennlp.modules import Seq2SeqEncoder, TextFieldEmbedder
+from AttentionSegmentation.allennlp.data import Vocabulary
+from AttentionSegmentation.allennlp.common.checks import check_dimensions_match
+from AttentionSegmentation.allennlp.training.metrics import Average
 
 # from Model.attention_module import BaseAttention,\
 #     DotAttention, BahdanauAttention
-import model.attention_module as attention_modules
-# from Model.text_field_embedder import GatedTextFieldEmbedder
-import model.text_field_embedder as text_field_embedder_modules
-from model.metrics import ClassificationMetrics
+import AttentionSegmentation.model.attention_module as attention_modules
+# from AttentionSegmentation.Model.text_field_embedder import GatedTextFieldEmbedder
+import AttentionSegmentation.model.text_field_embedder as text_field_embedder_modules
+from AttentionSegmentation.model.metrics import ClassificationMetrics
 
-from commons.utils import to_numpy
+from AttentionSegmentation.commons.utils import to_numpy
 
-# FIXME Implement this
-from preprocess.label_indices \
-    import LabelIndicesBiMap, CondensedLabelIndicesBiMap
 
 
 class AttentionClassifier(Model):

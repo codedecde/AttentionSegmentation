@@ -6,7 +6,6 @@ import os
 import sys
 import logging
 
-import torch.nn as nn
 
 from AttentionSegmentation.allennlp.data import Vocabulary
 from AttentionSegmentation.allennlp.data.iterators import DataIterator
@@ -15,6 +14,7 @@ import AttentionSegmentation.reader as Readers
 
 # import model as Models
 from AttentionSegmentation.trainer import Trainer
+import AttentionSegmentation.model.classifiers as Models
 
 from AttentionSegmentation.commons.utils import setup_output_dir, read_from_config_file
 from AttentionSegmentation.commons.model_utils import construct_vocab, load_model_from_existing
@@ -119,13 +119,16 @@ def main():
     logger.info("Data Iterators Done")
 
     # # Create the model
-    # logger.info("Constructing The model")
-    # model_params = config.pop("model")
-    # model_type = model_params.pop("type")
-    # assert model_type is not None and hasattr(Models, model_type),\
-    #     f"Cannot find reader {model_type}"
-    # model = getattr(Models, model_type).from_params(vocab, model_params)
-    model = nn.Linear(200, 200)
+    logger.info("Constructing The model")
+    model_params = config.pop("model")
+    model_type = model_params.pop("type")
+    assert model_type is not None and hasattr(Models, model_type),\
+        f"Cannot find reader {model_type}"
+    model = getattr(Models, model_type).from_params(
+        vocab=vocab,
+        params=model_params,
+        label_indexer=reader.get_label_indexer()
+    )
     logger.info("Model Construction done")
 
     # if load_config is not None:

@@ -37,42 +37,42 @@ class Trainer(common_trainer.Trainer):
     def train(self, *args, **kwargs):
         super(Trainer, self).train(*args, **kwargs)
 
-    @overrides
-    def _description_from_metrics(
-            self, metrics: Dict[str, Dict[str, float]]) -> str:
-        """Show metrics.
+    # @overrides
+    # def _description_from_metrics(
+    #         self, metrics: Dict[str, Dict[str, float]]) -> str:
+    #     """Show metrics.
 
-        The metrics format we get are of the form::
+    #     The metrics format we get are of the form::
 
-            "Label"
-                "precision": _
-                "recall": _
-                "fscore": _
-                "accuracy": _
-                "loss": _
+    #         "Label"
+    #             "precision": _
+    #             "recall": _
+    #             "fscore": _
+    #             "accuracy": _
+    #             "loss": _
 
-        """
-        new_metrics = defaultdict(list)
-        for label in metrics:
-            if re.match(".*loss$", label) is not None:
-                # all losses are of the form loss/ entropy_loss, etc
-                new_metrics[label] = metrics[label]
-            else:
-                for metric in metrics[label]:
-                    new_metrics[metric].append(metrics[label][metric])
-        metrics_to_show = ["accuracy", "fscore"]
-        losses_to_show = ["entropy_loss", "coverage_loss"]
-        writebuf = []
-        for metric in metrics_to_show:
-            writebuf.append(f"{metric}: {np.mean(new_metrics[metric]):2.2f}")
-        for loss in losses_to_show:
-            if loss in new_metrics:
-                writebuf.append(
-                    get_loss_string(loss, new_metrics[loss]))
-        lossval = new_metrics['loss']
-        writebuf.append(get_loss_string("loss", lossval))
-        write_string = ", ".join(writebuf) + " ||"
-        return write_string
+    #     """
+    #     new_metrics = defaultdict(list)
+    #     for label in metrics:
+    #         if re.match(".*loss$", label) is not None:
+    #             # all losses are of the form loss/ entropy_loss, etc
+    #             new_metrics[label] = metrics[label]
+    #         else:
+    #             for metric in metrics[label]:
+    #                 new_metrics[metric].append(metrics[label][metric])
+    #     metrics_to_show = ["accuracy", "fscore"]
+    #     losses_to_show = ["entropy_loss", "coverage_loss"]
+    #     writebuf = []
+    #     for metric in metrics_to_show:
+    #         writebuf.append(f"{metric}: {np.mean(new_metrics[metric]):2.2f}")
+    #     for loss in losses_to_show:
+    #         if loss in new_metrics:
+    #             writebuf.append(
+    #                 get_loss_string(loss, new_metrics[loss]))
+    #     lossval = new_metrics['loss']
+    #     writebuf.append(get_loss_string("loss", lossval))
+    #     write_string = ", ".join(writebuf) + " ||"
+    #     return write_string
 
     @overrides
     def test(self, data):
@@ -90,20 +90,20 @@ class Trainer(common_trainer.Trainer):
         writebuf = self._prettyprint(metrics, writebuf)
         logger.info(writebuf)
 
-    @overrides
-    def _get_validation_metric(self, val_metrics):
-        """We return the mean of all _validation_metric
-        across labels.
-        """
-        # returns average metric across all labels
-        if self._validation_metric in val_metrics.keys():
-            return val_metrics[self._validation_metric]
-        ret_metric_list = []
-        for label in val_metrics:
-            if re.match(".*loss$", label) is not None:
-                continue
-            ret_metric_list.append(val_metrics[label][self._validation_metric])
-        return np.mean(ret_metric_list)
+    # @overrides
+    # def _get_validation_metric(self, val_metrics):
+    #     """We return the mean of all _validation_metric
+    #     across labels.
+    #     """
+    #     # returns average metric across all labels
+    #     if self._validation_metric in val_metrics.keys():
+    #         return val_metrics[self._validation_metric]
+    #     ret_metric_list = []
+    #     for label in val_metrics:
+    #         if re.match(".*loss$", label) is not None:
+    #             continue
+    #         ret_metric_list.append(val_metrics[label][self._validation_metric])
+    #     return np.mean(ret_metric_list)
 
     def _prettyprint(self, metrics, writebuf):
         """Prettily printing the precision, recall, fscore for each label.
@@ -167,19 +167,19 @@ class Trainer(common_trainer.Trainer):
 
         return loss
 
-    @overrides
-    def _metrics_to_console(self,  # pylint: disable=no-self-use
-                            train_metrics: dict,
-                            val_metrics: dict = None) -> None:
-        """Log the training / validation metric
-        """
-        writebuf = "########## TRAINING ##########"
-        writebuf = self._prettyprint(train_metrics, writebuf)
-        logger.info(writebuf)
-        if val_metrics:
-            writebuf = "########## VALIDATION ##########"
-            writebuf = self._prettyprint(val_metrics, writebuf)
-            logger.info(writebuf)
+    # @overrides
+    # def _metrics_to_console(self,  # pylint: disable=no-self-use
+    #                         train_metrics: dict,
+    #                         val_metrics: dict = None) -> None:
+    #     """Log the training / validation metric
+    #     """
+    #     writebuf = "########## TRAINING ##########"
+    #     writebuf = self._prettyprint(train_metrics, writebuf)
+    #     logger.info(writebuf)
+    #     if val_metrics:
+    #         writebuf = "########## VALIDATION ##########"
+    #         writebuf = self._prettyprint(val_metrics, writebuf)
+    #         logger.info(writebuf)
 
     @classmethod
     @overrides
