@@ -120,7 +120,7 @@ def plot_confusion_matrix(confusion_matrix: ConfusionMatrix,
 
 def _attn_to_rgb(attn_weights):
     attn_hex = str(hex(int(abs(attn_weights)*255)))[2:]
-    rgb = '#0000ff' + attn_hex
+    rgb = '#22aadd' + attn_hex
     return rgb
 
 def _get_word_color(word, attn_weights):
@@ -139,7 +139,7 @@ def colorize_text(text, attn_weights):
     return ' '.join(html_blocks)
 
 def get_colorized_text_as_html(text, attn_weights):
-    return '<html><body style="color:#ffffff">' + colorize_text(text, attn_weights) + '</body></html>'
+    return '<html><body style="color:#000000">' + colorize_text(text, attn_weights) + '</body></html>'
 
 def colorized_text_to_webpage(text, attn_weights, vis_page='visualize.html'):
     """
