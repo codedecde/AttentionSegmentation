@@ -117,3 +117,35 @@ def plot_confusion_matrix(confusion_matrix: ConfusionMatrix,
     if filename is not None:
         plt.savefig(filename)
     return confusion_matrix
+
+def _attn_to_rgb(attn_weights):
+    attn_hex = str(hex(int(abs(attn_weights)*255)))[2:]
+    rgb = '#0000ff' + attn_hex
+    return rgb
+
+def _get_word_color(word, attn_weights):
+    return '<span style="background-color:' + _attn_to_rgb(attn_weights) + '">' + word + '</span>'
+
+def colorize_text(text, attn_weights):
+    """
+    text: a string with the text to visualize
+    attn_weights: a numpy vector in the range [0, 1] with one entry per word representing the attention weight
+    """
+    words = text.split()
+    assert len(words) == len(attn_weights)
+    html_blocks = ['']*len(words)
+    for i in range(len(words)):
+        html_blocks[i] += _get_word_color(words[i], attn_weights[i])
+    return ' '.join(html_blocks)
+
+def get_colorized_text_as_html(text, attn_weights):
+    return '<html><body style="color:#ffffff">' + colorize_text(text, attn_weights) + '</body></html>'
+
+def colorized_text_to_webpage(text, attn_weights, vis_page='visualize.html'):
+    """
+    # Sample code:
+    from visualize_attns import  colorized_text_to_webpage
+    colorized_text_to_webpage('This is a test', [0.1, 0.2, 0.1, 0.7])
+    """
+    with open(vis_page, 'w') as f:
+        f.write(get_colorized_text_as_html(text, attn_weights))
