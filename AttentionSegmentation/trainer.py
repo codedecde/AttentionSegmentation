@@ -1,15 +1,17 @@
 import os
 import torch
 from collections import defaultdict
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Any
 from overrides import overrides
 import numpy as np
 import logging
 import re
+import pdb
 
 from AttentionSegmentation.allennlp.nn import util
 from AttentionSegmentation.allennlp.common.tqdm import Tqdm
 import AttentionSegmentation.commons.trainer as common_trainer
+from AttentionSegmentation.visualization.tensorboard_logger import TfLogger
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +28,30 @@ def get_loss_string(name, value):
 
 
 class Trainer(common_trainer.Trainer):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, base_dir, tensorboard=None, *args, **kwargs):
+        # Setup Tensorboard Logging
+        if tensorboard is not None:
+            self._tf_logger, self._tf_params = self._init_tensorboard(
+                tensorboard, base_dir)
+        else:
+            self._tf_logger = None
+            self._tf_params = None
         super(Trainer, self).__init__(*args, **kwargs)
         self._reset_counter()
+
+    def _init_tensorboard(
+        self, tensorboard, base_dir
+    ):
+        tf_params = tensorboard
+        tf_logger = TfLogger(base_dir, "tf_logging")
+        return tf_logger, tf_params
+
+    def _tf_log(self, metrics, step):
+        for metric in metrics:
+            if metric in self._tf_params["log_summary"]:
+                log_func = self._tf_params["log_summary"][metric]
+                getattr(self._tf_logger, log_func)(
+                    tag=metric, value=metrics[metric], step=step)
 
     def _reset_counter(self):
         self._zero_counts = {"zero": 0., "num_preds": 0}
@@ -181,12 +204,6 @@ class Trainer(common_trainer.Trainer):
     #         writebuf = self._prettyprint(val_metrics, writebuf)
     #         logger.info(writebuf)
 
-    @classmethod
-    @overrides
-    def from_params(cls, *args, **kwargs) -> 'Trainer':
-        new_args = cls.get_args(*args, **kwargs)
-        return Trainer(**new_args)
-
     @overrides
     def _inference_loss(self, data,
                         logger_string="validation") -> Tuple[float, int]:
@@ -231,3 +248,17 @@ class Trainer(common_trainer.Trainer):
             logger_string, num_zero_preds, num_preds))
 
         return inference_loss, batches_this_epoch
+
+    @classmethod
+    @overrides
+    def from_params(cls, base_dir, *args, **kwargs) -> 'Trainer':
+        model_serialization_dir = os.path.join(base_dir, "models")
+        assert os.path.exists(model_serialization_dir), \
+            "Cannot find the serialization directory at" \
+            f" {model_serialization_dir}"
+        kwargs["serialization_dir"] = model_serialization_dir
+        tensorboard = None
+        if "tensorboard" in kwargs["params"]:
+            tensorboard = kwargs["params"].pop("tensorboard")
+        new_args = cls.get_args(*args, **kwargs)
+        return Trainer(base_dir=base_dir, tensorboard=tensorboard, **new_args)

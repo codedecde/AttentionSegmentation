@@ -290,6 +290,10 @@ class Trainer(object):
             description = self._description_from_metrics(metrics)
 
             train_generator_tqdm.set_description(description, refresh=False)
+            if hasattr(self, "_tf_params") and self._tf_params is not None:
+                # We have TF logging
+                if self._batch_num_total % self._tf_params["log_every"] == 0:
+                    self._tf_log(metrics, self._batch_num_total)
 
         return self._get_metrics(train_loss, batches_this_epoch, reset=True)
 
@@ -550,7 +554,7 @@ class Trainer(object):
             be based on some validation metric computed by your model.
         """
         if self._serialization_dir is not None:
-            model_path = os.path.join(self._serialization_dir, "models",
+            model_path = os.path.join(self._serialization_dir,
                                       "model_state_epoch_{}.th".format(epoch))
             model_state = self._model.state_dict()
             torch.save(model_state, model_path)
@@ -560,7 +564,7 @@ class Trainer(object):
                               'optimizer': self._optimizer.state_dict(),
                               'batch_num_total': self._batch_num_total}
             training_path = os.path.join(
-                self._serialization_dir, "models",
+                self._serialization_dir,
                 "training_state_epoch_{}.th".format(epoch))
             torch.save(training_state, training_path)
             if is_best:
@@ -600,7 +604,7 @@ class Trainer(object):
             self._serialization_dir is not None and
             any(
                 "model_state_epoch_" in x
-                for x in os.listdir(os.path.join(self._serialization_dir, "models"))
+                for x in os.listdir(os.path.join(self._serialization_dir))
             )
         )
         if not have_checkpoint:
@@ -610,7 +614,7 @@ class Trainer(object):
             return 0, []
 
         serialization_files = os.listdir(
-            os.path.join(self._serialization_dir, "models"))
+            os.path.join(self._serialization_dir))
         model_checkpoints = [x for x in serialization_files
                              if "model_state_epoch" in x]
         # Get the last checkpoint file.  Epochs are specified as either an
@@ -637,10 +641,10 @@ class Trainer(object):
             epoch_to_load = '{0}.{1}'.format(last_epoch[0], last_epoch[1])
 
         model_path = os.path.join(
-            self._serialization_dir, "models",
+            self._serialization_dir,
             "model_state_epoch_{}.th".format(epoch_to_load))
         training_state_path = os.path.join(
-            self._serialization_dir, "models",
+            self._serialization_dir,
             "training_state_epoch_{}.th".format(epoch_to_load))
 
         # Load the parameters onto CPU, then transfer to GPU.

@@ -118,7 +118,7 @@ def main():
 
     logger.info("Data Iterators Done")
 
-    # # Create the model
+    # Create the model
     logger.info("Constructing The model")
     model_params = config.pop("model")
     model_type = model_params.pop("type")
@@ -145,18 +145,18 @@ def main():
 
     trainer = Trainer.from_params(
         model=model,
-        serialization_dir=serial_dir,
+        base_dir=serial_dir,
         iterator=data_iterator,
         train_data=instances_train,
         validation_data=instances_val,
         params=config.pop("trainer")
     )
     trainer.train()
-    # logger.info("Training Done.")
-    # if instances_test is not None:
-    #     logger.info("Computing final Test Accuracy")
-    #     trainer.test(instances_test)
-    # logger.info("Done.")
+    logger.info("Training Done.")
+    if instances_test is not None:
+        logger.info("Computing final Test Accuracy")
+        trainer.test(instances_test)
+    logger.info("Done.")
 
 
 if __name__ == "__main__":

@@ -1,13 +1,13 @@
 """
 File: tensorboard_logger.py
 Modified by: Senthil Purushwalkam and Joel Ruben Antony Moniz
-Code referenced from https://gist.github.com/gyglim/1f8dfb1b5c82627ae3efcfbbadb9f514
+Code referenced from
+https://gist.github.com/gyglim/1f8dfb1b5c82627ae3efcfbbadb9f514
 """
 
 import tensorflow as tf
-from torch.autograd import Variable
 import numpy as np
-import scipy.misc 
+import scipy.misc
 import os
 try:
     from StringIO import StringIO  # Python 2.7
@@ -15,8 +15,8 @@ except ImportError:
     from io import BytesIO         # Python 3.x
 
 
-class Logger(object):
-    
+class TfLogger(object):
+
     def __init__(self, log_dir, name=None):
         """Create a summary writer logging to log_dir."""
         if name is None:
@@ -25,7 +25,7 @@ class Logger(object):
         if name is not None:
             try:
                 os.makedirs(os.path.join(log_dir, name))
-            except:
+            except Exception as e:
                 pass
             self.writer = tf.summary.FileWriter(os.path.join(log_dir, name),
                                                 filename_suffix=name)
@@ -34,7 +34,9 @@ class Logger(object):
 
     def scalar_summary(self, tag, value, step):
         """Log a scalar variable."""
-        summary = tf.Summary(value=[tf.Summary.Value(tag=tag, simple_value=value)])
+        summary = tf.Summary(
+            value=[tf.Summary.Value(tag=tag, simple_value=value)])
+        print(step)
         self.writer.add_summary(summary, step)
 
     def image_summary(self, tag, images, step):
@@ -45,7 +47,7 @@ class Logger(object):
             # Write the image to a string
             try:
                 s = StringIO()
-            except:
+            except Exception as e:
                 s = BytesIO()
             scipy.misc.toimage(img).save(s, format="png")
 
@@ -54,12 +56,13 @@ class Logger(object):
                                        height=img.shape[0],
                                        width=img.shape[1])
             # Create a Summary value
-            img_summaries.append(tf.Summary.Value(tag='%s/%d' % (tag, i), image=img_sum))
+            img_summaries.append(
+                tf.Summary.Value(tag='%s/%d' % (tag, i), image=img_sum))
 
         # Create and write Summary
         summary = tf.Summary(value=img_summaries)
         self.writer.add_summary(summary, step)
-        
+
     def histo_summary(self, tag, values, step, bins=1000):
         """Log a histogram of the tensor of values."""
 
@@ -97,9 +100,8 @@ class Logger(object):
         """
         for tag, value in model.named_parameters():
             if value.grad is None:
-            	continue
+                continue
             tag = tag.replace('.', '/')
-            tag = self.name+'/'+tag
+            tag = self.name + '/' + tag
             self.histo_summary(tag, self.to_np(value), step)
-            self.histo_summary(tag+'/grad', self.to_np(value.grad), step)
-
+            self.histo_summary(tag + '/grad', self.to_np(value.grad), step)
