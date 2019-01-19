@@ -7,6 +7,7 @@ import torch
 from torch.nn import Linear
 import torch.nn.functional as F
 from torch import Tensor, LongTensor
+import pdb
 
 # import AttentionSegmentation.model as Attns
 import AttentionSegmentation.model as Attns
@@ -23,6 +24,7 @@ from AttentionSegmentation.allennlp.training.metrics import \
     BooleanAccuracy
 
 from AttentionSegmentation.reader.label_indexer import LabelIndexer
+from AttentionSegmentation.commons.utils import to_numpy
 
 
 class Classifier(Model):
@@ -160,6 +162,24 @@ class Classifier(Model):
             reset=reset)
         # return OrderedDict({x: y for x, y in metric_dict.items()})
         return metric_dict
+
+    @overrides
+    def decode(self, outputs):
+        decoded_output = {
+            "preds": [],
+            "attentions": []
+        }
+        lengths = outputs["mask"].sum(-1)
+        lengths = to_numpy(lengths, lengths.is_cuda)
+        for ix in range(lengths.size):
+            is_cuda = outputs["preds"][ix].is_cuda
+            pred = to_numpy(outputs["preds"][ix], is_cuda).item()
+            pred_str = self.label_indexer.ix2tags[0] if pred == 1 else 'O'
+            decoded_output["preds"].append(pred_str)
+            attention = to_numpy(
+                outputs["attentions"][ix, :lengths[ix]], is_cuda).tolist()
+            decoded_output["attentions"].append(attention)
+        return decoded_output
 
     @classmethod
     @overrides

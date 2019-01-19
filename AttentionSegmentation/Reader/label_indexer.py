@@ -19,11 +19,12 @@ class LabelIndexer(object):
     ):
         self.tags = sorted(tags)
         self.tags2ix = {w: ix for ix, w in enumerate(self.tags)}
-        self.tags2ix["O"] = len(self.tags2ix)
+        self.ix2tags = {self.tags2ix[t]: t for t in self.tags2ix}
         self.label_namespace = label_namespace
 
     def get_num_tags(self) -> int:
-        return len(self.tags2ix)
+        # self.tags2ix does not contain the 'O' tag
+        return len(self.tags2ix) + 1
 
     def index(
         self,
@@ -54,7 +55,7 @@ class LabelIndexer(object):
         if len(indices) > 0:
             indices = list(indices)
         else:
-            indices = [self.tags2ix["O"]]
+            indices = [len(self.tags2ix)]
         if as_label_field:
             indices = MultiLabelField(
                 labels=indices,

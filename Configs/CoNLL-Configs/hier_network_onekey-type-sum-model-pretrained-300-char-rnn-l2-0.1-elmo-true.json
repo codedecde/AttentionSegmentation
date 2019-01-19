@@ -88,15 +88,15 @@
   },
   "trainer": {
     "optimizer": "adam",
-    "tensorboard": {
-      "log_summary":{
-        "loss": "scalar_summary",
-        "accuracy": "scalar_summary",
-        "attention_weights": "histo_summary"
-      },
-      "model_params": false,
-      "log_every": 5
-    },
+    // "tensorboard": {
+    //   "log_summary":{
+    //     "loss": "scalar_summary",
+    //     "accuracy": "scalar_summary",
+    //     "attention_weights": "histo_summary"
+    //   },
+    //   "model_params": false,
+    //   "log_every": 5
+    // },
     "num_epochs": 50,
     "patience": 10,
     "cuda_device": -1,

@@ -5,11 +5,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sn
 
-from model.metrics import ConfusionMatrix
-
-# FIXME: Implement this
-from preprocess.label_indices \
-    import CondensedLabelIndicesBiMap, LabelIndicesBiMap
+from AttentionSegmentation.model.metrics import ConfusionMatrix
 
 
 def plot_data_point(data_point, mode="hierarchical", **kwargs):
@@ -107,8 +103,10 @@ def plot_confusion_matrix(confusion_matrix: ConfusionMatrix,
 
     gold_labels = confusion_matrix.labels
     pred_labels = confusion_matrix.labels
-    df_cm = pd.DataFrame(confusion_matrix.confusion_matrix, index=[i for i in gold_labels],
-                         columns=[i for i in pred_labels])
+    df_cm = pd.DataFrame(
+        confusion_matrix.confusion_matrix, index=[i for i in gold_labels],
+        columns=[i for i in pred_labels]
+    )
     plt.figure(figsize=(10, 7))
     ax = sn.heatmap(df_cm, annot=True, fmt="3.1f")
     ax.set(xlabel="Pred Labels", ylabel="Gold Labels")
@@ -118,28 +116,36 @@ def plot_confusion_matrix(confusion_matrix: ConfusionMatrix,
         plt.savefig(filename)
     return confusion_matrix
 
+
 def _attn_to_rgb(attn_weights):
-    attn_hex = str(hex(int(abs(attn_weights)*255)))[2:]
+    attn_hex = str(hex(int(abs(attn_weights) * 255)))[2:]
     rgb = '#22aadd' + attn_hex
     return rgb
 
+
 def _get_word_color(word, attn_weights):
-    return '<span style="background-color:' + _attn_to_rgb(attn_weights) + '">' + word + '</span>'
+    return '<span style="background-color:' + _attn_to_rgb(attn_weights) + \
+        '">' + word + '</span>'
+
 
 def colorize_text(text, attn_weights):
     """
     text: a string with the text to visualize
-    attn_weights: a numpy vector in the range [0, 1] with one entry per word representing the attention weight
+    attn_weights: a numpy vector in the range [0, 1]
+        with one entry per word representing the attention weight
     """
     words = text.split()
     assert len(words) == len(attn_weights)
-    html_blocks = ['']*len(words)
+    html_blocks = [''] * len(words)
     for i in range(len(words)):
         html_blocks[i] += _get_word_color(words[i], attn_weights[i])
     return ' '.join(html_blocks)
 
+
 def get_colorized_text_as_html(text, attn_weights):
-    return '<html><body style="color:#000000">' + colorize_text(text, attn_weights) + '</body></html>'
+    return '<html><body style="color:#000000">' + \
+        colorize_text(text, attn_weights) + '</body></html>'
+
 
 def colorized_text_to_webpage(text, attn_weights, vis_page='visualize.html'):
     """
@@ -149,3 +155,32 @@ def colorized_text_to_webpage(text, attn_weights, vis_page='visualize.html'):
     """
     with open(vis_page, 'w') as f:
         f.write(get_colorized_text_as_html(text, attn_weights))
+
+
+def colorized_list_to_webpage(
+        lst_txt, lst_attn_weights, vis_page="visualize.html"):
+    """This generates the output of a list of sentences as a web page
+    """
+    with open(vis_page, 'w') as f:
+        for txt, attn_weights in zip(lst_txt, lst_attn_weights):
+            html = get_colorized_text_as_html(txt, attn_weights)
+            f.write(f"{html}<br>")
+
+
+if __name__ == "__main__":
+    # colorized_text_to_webpage(
+    #     'This is a test', [0.1, 0.2, 0.1, 0.7], vis_page="WebOuts/test.html")
+    lst_txt = [
+        "This is a test", "And another one", "And one last for good luck"
+    ]
+    attn_weights = [[1, 1, 1, 10], [4, 2, 1], [3, 2, 1, 4, 5, 9]]
+    for ix in range(len(attn_weights)):
+        dr = float(sum(attn_weights[ix]))
+        for jx in range(len(attn_weights[ix])):
+            attn_weights[ix][jx] /= dr
+    colorized_list_to_webpage(
+        lst_txt, attn_weights, vis_page="WebOuts/test.html"
+    )
+
+    # colorized_text_to_webpage(
+    #     'This is a test', [0.1, 0.2, 0.1, 0.7], vis_page="WebOuts/test.html")
