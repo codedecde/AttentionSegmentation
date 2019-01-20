@@ -26,7 +26,7 @@ from AttentionSegmentation.allennlp.data.token_indexers \
     import TokenIndexer, SingleIdTokenIndexer, TokenCharactersIndexer
 
 from AttentionSegmentation.visualization.visualize_attns \
-    import colorized_list_to_webpage, colorized_predictions_to_webpage
+    import colorized_predictions_to_webpage
 
 from AttentionSegmentation.commons.utils import \
     read_from_config_file, to_numpy
@@ -193,8 +193,6 @@ class BasicAttentionModelRunner(BaseModelRunner):
         predictions = []
         index = 0
         index_labeler = self._reader.get_label_indexer()
-        sentences = []
-        attentions = []
         correct_counts = 0.
         for batch in inference_generator_tqdm:
             # Currently I don't support multi-gpu data parallel
@@ -208,9 +206,6 @@ class BasicAttentionModelRunner(BaseModelRunner):
                 pred = output_dict["preds"][ix]
                 attn = output_dict["attentions"][ix]
                 gold = "O"
-                if html_file != "":
-                    sentences.append(" ".join(text))
-                    attentions.append(attn)
                 if label_num < len(index_labeler.ix2tags):
                     gold = index_labeler.ix2tags[label_num]
                 if pred == gold:
@@ -223,8 +218,6 @@ class BasicAttentionModelRunner(BaseModelRunner):
                 }
                 predictions.append(prediction)
         if html_file != "":
-            # colorized_list_to_webpage(
-            #     sentences, attentions, vis_page=html_file)
             colorized_predictions_to_webpage(
                 predictions, vis_page=html_file)
         print("Accuracy: ", 100 * correct_counts / index)
