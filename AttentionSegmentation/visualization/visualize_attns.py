@@ -167,6 +167,58 @@ def colorized_list_to_webpage(
             f.write(f"{html}<br>")
 
 
+def colorized_predictions_to_webpage(
+        predictions, vis_page="visualize.html"):
+    """This generates the visualization web page from predictions
+
+    Arguments:
+        predictions (List[Dict[str, Any]]): A list of predictions.
+            Each prediction contains:
+                * text (List[str]): list of tokens
+                * pred (str): The predicted token
+                * gold (str): The gold token
+                * attn (List[float]): The list of float tokens
+        vis_page (str): The final output page
+
+    """
+    with open(vis_page, "w") as f:
+        header = (
+            '<html>\n'
+            '<head>\n'
+            '<style>\n'  # The CSS element
+            '   correct { color: #8dde28; padding-right: 5px; padding-left: 5px }\n'
+            '   incorrect { color: #e93f3f; padding-right: 5px; padding-left: 5px }\n'
+            '   body { color: color:#000000}\n'
+            '</style>\n'
+            '<\head>\n'
+            '<body>'
+        )
+        f.write(header)
+        for pred in predictions:
+            txt = " ".join(pred["text"])
+            attn_weights = pred["attn"]
+            pred_label = pred["pred"]
+            gold_label = pred["gold"]
+            html = colorize_text(txt, attn_weights)
+            if pred_label == gold_label:
+                pred_gold = (
+                    '<correct>'
+                    f' {pred_label} '
+                    f' {gold_label} '
+                    '</correct>'
+                )
+            else:
+                pred_gold = (
+                    '<incorrect>'
+                    f' {pred_label} '
+                    f' {gold_label} '
+                    '</incorrect>'
+                )
+            f.write(f"{html}{pred_gold}<br>")
+        footer = "</body></html>"
+        f.write(footer)
+
+
 if __name__ == "__main__":
     # colorized_text_to_webpage(
     #     'This is a test', [0.1, 0.2, 0.1, 0.7], vis_page="WebOuts/test.html")

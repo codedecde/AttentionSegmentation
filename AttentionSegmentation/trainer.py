@@ -109,8 +109,10 @@ class Trainer(common_trainer.Trainer):
         self._model.load_state_dict(model_state)
         loss, num_batches = self._inference_loss(data, logger_string="Testing")
         metrics = self._get_metrics(loss, num_batches, reset=True)
-        writebuf = "########## TESTING ##########"
-        writebuf = self._prettyprint(metrics, writebuf)
+        logger.info("Testing Results now")
+        writebuf = self._description_from_metrics(metrics)
+        # writebuf = "########## TESTING ##########"
+        # writebuf = self._prettyprint(metrics, writebuf)
         logger.info(writebuf)
 
     # @overrides

@@ -5,6 +5,7 @@ import torch
 import os
 import sys
 import logging
+import pdb
 
 
 from AttentionSegmentation.allennlp.data import Vocabulary
@@ -155,7 +156,10 @@ def main():
     logger.info("Training Done.")
     if instances_test is not None:
         logger.info("Computing final Test Accuracy")
-        trainer.test(instances_test)
+        try:
+            trainer.test(instances_test)
+        except Exception as e:
+            pdb.set_trace()
     logger.info("Done.")
 
 

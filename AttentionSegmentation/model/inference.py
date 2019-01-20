@@ -26,7 +26,7 @@ from AttentionSegmentation.allennlp.data.token_indexers \
     import TokenIndexer, SingleIdTokenIndexer, TokenCharactersIndexer
 
 from AttentionSegmentation.visualization.visualize_attns \
-    import colorized_list_to_webpage
+    import colorized_list_to_webpage, colorized_predictions_to_webpage
 
 from AttentionSegmentation.commons.utils import \
     read_from_config_file, to_numpy
@@ -195,23 +195,26 @@ class BasicAttentionModelRunner(BaseModelRunner):
         index_labeler = self._reader.get_label_indexer()
         sentences = []
         attentions = []
+        correct_counts = 0.
         for batch in inference_generator_tqdm:
             # Currently I don't support multi-gpu data parallel
             output_dict = self._model.decode(self._model(**batch))
             for ix in range(len(output_dict["preds"])):
                 text = self._get_text_from_instance(instances[index])
+                label_num = instances[index].fields['labels'].labels[0]
+                # FIXME: Currently supporting binary classification
+                assert len(instances[index].fields['labels'].labels) == 1
                 index += 1
                 pred = output_dict["preds"][ix]
                 attn = output_dict["attentions"][ix]
                 gold = "O"
-                # FIXME: Currently supporting binary classification
-                # label_num = instances[index].fields['labels'].labels[0]
-                label_num = 1000
                 if html_file != "":
                     sentences.append(" ".join(text))
                     attentions.append(attn)
                 if label_num < len(index_labeler.ix2tags):
                     gold = index_labeler.ix2tags[label_num]
+                if pred == gold:
+                    correct_counts += 1.
                 prediction = {
                     "text": text,
                     "pred": pred,
@@ -219,14 +222,17 @@ class BasicAttentionModelRunner(BaseModelRunner):
                     "gold": gold
                 }
                 predictions.append(prediction)
-            if html_file != "":
-                colorized_list_to_webpage(
-                    sentences, attentions, vis_page=html_file)
+        if html_file != "":
+            # colorized_list_to_webpage(
+            #     sentences, attentions, vis_page=html_file)
+            colorized_predictions_to_webpage(
+                predictions, vis_page=html_file)
+        print("Accuracy: ", 100 * correct_counts / index)
         return predictions
 
 
 if __name__ == "__main__":
-    base_dir = "./Experiments/CoNLL/HAN-ELMO-Experiments/run-16/"
+    base_dir = "./Experiments/CoNLL/HAN-ELMO-Experiments/run-20/"
     runner = BasicAttentionModelRunner.load_from_dir(base_dir)
     base_valid_dir = "./Data/CoNLLData/"
     valid_file = f"{base_valid_dir}/valid.txt"
