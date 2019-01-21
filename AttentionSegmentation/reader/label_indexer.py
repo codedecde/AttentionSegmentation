@@ -3,8 +3,8 @@ from typing import List, Union
 import re
 import pdb
 
-from AttentionSegmentation.allennlp.data.fields import MultiLabelField
-from AttentionSegmentation.allennlp.common import Params
+from allennlp.data.fields import MultiLabelField
+from allennlp.common import Params
 
 
 class LabelIndexer(object):

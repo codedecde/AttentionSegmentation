@@ -8,8 +8,8 @@ import logging
 import re
 import pdb
 
-from AttentionSegmentation.allennlp.nn import util
-from AttentionSegmentation.allennlp.common.tqdm import Tqdm
+from allennlp.nn import util
+from allennlp.common.tqdm import Tqdm
 import AttentionSegmentation.commons.trainer as common_trainer
 from AttentionSegmentation.visualization.tensorboard_logger import TfLogger
 

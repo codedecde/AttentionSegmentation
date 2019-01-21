@@ -10,21 +10,21 @@ from torch import Tensor, LongTensor
 import pdb
 
 # import AttentionSegmentation.model as Attns
-import AttentionSegmentation.model as Attns
-import AttentionSegmentation.allennlp.nn.util as util
-from AttentionSegmentation.allennlp.nn import \
+import allennlp.nn.util as util
+from allennlp.nn import \
     InitializerApplicator, RegularizerApplicator
-from AttentionSegmentation.allennlp.modules import \
+from allennlp.modules import \
     Seq2SeqEncoder, TextFieldEmbedder
-from AttentionSegmentation.allennlp.data import Vocabulary
-from AttentionSegmentation.allennlp.common.checks import check_dimensions_match
-from AttentionSegmentation.allennlp.models.model import Model
-from AttentionSegmentation.allennlp.common.params import Params
-from AttentionSegmentation.allennlp.training.metrics import \
+from allennlp.data import Vocabulary
+from allennlp.common.checks import check_dimensions_match
+from allennlp.models.model import Model
+from allennlp.common.params import Params
+from allennlp.training.metrics import \
     BooleanAccuracy
 
 from AttentionSegmentation.reader.label_indexer import LabelIndexer
 from AttentionSegmentation.commons.utils import to_numpy
+import AttentionSegmentation.model as Attns
 
 
 class Classifier(Model):

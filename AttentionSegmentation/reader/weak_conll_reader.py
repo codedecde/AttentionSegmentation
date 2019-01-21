@@ -5,16 +5,16 @@ import logging
 
 from overrides import overrides
 
-from AttentionSegmentation.allennlp.common import Params
-from AttentionSegmentation.allennlp.data.dataset_readers.dataset_reader \
+from allennlp.common import Params
+from allennlp.data.dataset_readers.dataset_reader \
     import DatasetReader
-from AttentionSegmentation.allennlp.common.checks import ConfigurationError
-from AttentionSegmentation.allennlp.data.dataset_readers \
+from allennlp.common.checks import ConfigurationError
+from allennlp.data.dataset_readers \
     import Conll2003DatasetReader, DatasetReader
-from AttentionSegmentation.allennlp.data.instance import Instance
-from AttentionSegmentation.allennlp.data.token_indexers import TokenIndexer
-from AttentionSegmentation.allennlp.data.tokenizers import Token
-from AttentionSegmentation.allennlp.data.fields \
+from allennlp.data.instance import Instance
+from allennlp.data.token_indexers import TokenIndexer
+from allennlp.data.tokenizers import Token
+from allennlp.data.fields \
     import MultiLabelField, TextField, SequenceLabelField
 from AttentionSegmentation.reader.label_indexer import LabelIndexer
 

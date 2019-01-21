@@ -11,18 +11,18 @@ import numpy as np
 import json
 import pdb
 
-from AttentionSegmentation.allennlp.common.tqdm import Tqdm
-from AttentionSegmentation.allennlp.common.params import Params
-from AttentionSegmentation.allennlp.data.fields \
+from allennlp.common.tqdm import Tqdm
+from allennlp.common.params import Params
+from allennlp.data.fields \
     import TextField, MultiLabelField
-from AttentionSegmentation.allennlp.nn import util
-from AttentionSegmentation.allennlp.data.instance import Instance
-from AttentionSegmentation.allennlp.common.checks import ConfigurationError
-from AttentionSegmentation.allennlp.data.tokenizers import Token
-from AttentionSegmentation.allennlp.data import Vocabulary
-from AttentionSegmentation.allennlp.data.iterators import BasicIterator
-from AttentionSegmentation.allennlp.data.iterators import DataIterator
-from AttentionSegmentation.allennlp.data.token_indexers \
+from allennlp.nn import util
+from allennlp.data.instance import Instance
+from allennlp.common.checks import ConfigurationError
+from allennlp.data.tokenizers import Token
+from allennlp.data import Vocabulary
+from allennlp.data.iterators import BasicIterator
+from allennlp.data.iterators import DataIterator
+from allennlp.data.token_indexers \
     import TokenIndexer, SingleIdTokenIndexer, TokenCharactersIndexer
 
 from AttentionSegmentation.visualization.visualize_attns \

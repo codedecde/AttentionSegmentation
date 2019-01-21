@@ -5,7 +5,7 @@ from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
 
-from AttentionSegmentation.allennlp.common.params import Params
+from allennlp.common.params import Params
 
 
 class BaseAttention(nn.Module):

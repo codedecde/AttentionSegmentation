@@ -8,9 +8,9 @@ import logging
 import pdb
 
 
-from AttentionSegmentation.allennlp.data import Vocabulary
-from AttentionSegmentation.allennlp.data.iterators import DataIterator
-# import AttentionSegmentation.allennlp.data.dataset_readers as Readers
+from allennlp.data import Vocabulary
+from allennlp.data.iterators import DataIterator
+# import allennlp.data.dataset_readers as Readers
 import AttentionSegmentation.reader as Readers
 
 # import model as Models
