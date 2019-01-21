@@ -1,0 +1,2 @@
+from __future__ import absolute_import
+from AttentionSegmentation.reader.weak_conll_reader import *
