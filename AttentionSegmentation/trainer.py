@@ -177,7 +177,8 @@ class Trainer(common_trainer.Trainer):
 
         if not for_training:
             thresh = np.log(0.5)
-            num_zero_preds = (output_dict['log_probs'].gt(thresh).long() == 0).sum().data.cpu().numpy()[0]
+            # num_zero_preds = (output_dict['log_probs'].gt(thresh).long() == 0).sum().data.cpu().numpy()[0]
+            num_zero_preds = (output_dict['log_probs'].gt(thresh).long() == 0).sum().item()
             self._zero_counts["zero"] += num_zero_preds
             self._zero_counts["num_preds"] += output_dict['log_probs'].numel()
         try:
