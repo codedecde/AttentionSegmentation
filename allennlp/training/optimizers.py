@@ -17,9 +17,11 @@ The available optimizers are
 
 import logging
 import re
+import math
 from typing import List, Any, Dict
 
 import torch
+from pytorch_pretrained_bert.optimization import BertAdam
 
 from allennlp.common import Params, Registrable
 
@@ -32,8 +34,10 @@ class Optimizer(Registrable):
     """
     default_implementation = "adam"
 
+    # Requires custom from_params.
     @classmethod
-    def from_params(cls, model_parameters: List, params: Params):
+    def from_params(cls, model_parameters: List, params: Params):  # type: ignore
+        # pylint: disable=arguments-differ
         if isinstance(params, str):
             optimizer = params
             params = Params({})
@@ -52,8 +56,8 @@ class Optimizer(Registrable):
             #
             # groups contains something like:
             #"parameter_groups": [
-            #       [["regex1", "regex2"], {"lr": 1e-3},
-            #        ["regex3"], {"lr": 1e-4}]
+            #       [["regex1", "regex2"], {"lr": 1e-3}],
+            #       [["regex3"], {"lr": 1e-4}]
             #]
             #(note that the allennlp config files require double quotes ", and will
             # fail (sometimes silently) with single quotes ').
@@ -109,7 +113,22 @@ class Optimizer(Registrable):
         else:
             parameter_groups = [param for name, param in model_parameters]
 
-        return Optimizer.by_name(optimizer)(parameter_groups, **params.as_dict()) # type: ignore
+        # Log the number of parameters to optimize
+        num_parameters = 0
+        for parameter_group in parameter_groups:
+            if isinstance(parameter_group, dict):
+                num_parameters += sum(parameter.numel() for parameter in parameter_group["params"])
+            else:
+                num_parameters += parameter_group.numel()
+        logger.info("Number of trainable parameters: %s", num_parameters)
+
+        # By default we cast things that e.g. look like floats to floats before handing them
+        # to the Optimizer constructor, but if you want to disable that behavior you could add a
+        #       "infer_type_and_cast": false
+        # key to your "trainer.optimizer" config.
+        infer_type_and_cast = params.pop_bool("infer_type_and_cast", True)
+        params_as_dict = params.as_dict(infer_type_and_cast=infer_type_and_cast)
+        return Optimizer.by_name(optimizer)(parameter_groups, **params_as_dict) # type: ignore
 
 # We just use the Pytorch optimizers, so here we force them into
 # Registry._registry so we can build them from params.
@@ -122,4 +141,136 @@ Registrable._registry[Optimizer] = {   # pylint: disable=protected-access
         "rmsprop": torch.optim.RMSprop,
         "adamax": torch.optim.Adamax,
         "averaged_sgd": torch.optim.ASGD,
+        "bert_adam": BertAdam,
 }
+
+def _safe_sparse_mask(tensor: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """
+    In PyTorch 1.0, Tensor._sparse_mask was changed to Tensor.sparse_mask.
+    This wrapper allows AllenNLP to (temporarily) work with both 1.0 and 0.4.1.
+    """
+    # pylint: disable=protected-access
+    try:
+        return tensor.sparse_mask(mask)
+    except AttributeError:
+        # TODO(joelgrus): remove this and/or warn at some point
+        return tensor._sparse_mask(mask)
+
+
+@Optimizer.register('dense_sparse_adam')
+class DenseSparseAdam(torch.optim.Optimizer):
+    # pylint: disable=protected-access,cell-var-from-loop
+    # pylint: disable=unneeded-not,misplaced-comparison-constant
+    # pylint: disable=len-as-condition,invalid-name,anomalous-backslash-in-string
+    """
+    NOTE: This class has been copied verbatim from the separate Dense and
+    Sparse versions of Adam in Pytorch.
+
+    Implements Adam algorithm with dense & sparse gradients.
+    It has been proposed in Adam: A Method for Stochastic Optimization.
+
+    Parameters
+    ----------
+    params : ``iterable``
+        iterable of parameters to optimize or dicts defining parameter groups
+    lr : ``float``, optional (default: 1e-3)
+        The learning rate.
+    betas : ``Tuple[float, float]``, optional (default: (0.9, 0.999))
+        coefficients used for computing running averages of gradient
+        and its square.
+    eps : ``float``, optional, (default: 1e-8)
+        A term added to the denominator to improve numerical stability.
+    """
+    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8):
+        if not 0.0 <= lr:
+            raise ValueError("Invalid learning rate: {}".format(lr))
+        if not 0.0 <= eps:
+            raise ValueError("Invalid epsilon value: {}".format(eps))
+        if not 0.0 <= betas[0] < 1.0:
+            raise ValueError("Invalid beta parameter at index 0: {}".format(betas[0]))
+        if not 0.0 <= betas[1] < 1.0:
+            raise ValueError("Invalid beta parameter at index 1: {}".format(betas[1]))
+        defaults = dict(lr=lr, betas=betas, eps=eps)
+        super(DenseSparseAdam, self).__init__(params, defaults)
+
+    def step(self, closure=None):
+        """
+        Performs a single optimization step.
+
+        Parameters
+        ----------
+        closure : ``callable``, optional.
+            A closure that reevaluates the model and returns the loss.
+        """
+        loss = None
+        if closure is not None:
+            loss = closure()
+
+        for group in self.param_groups:
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                grad = p.grad.data
+
+                state = self.state[p]
+
+                # State initialization
+                if len(state) == 0:
+                    state['step'] = 0
+                    # Exponential moving average of gradient values
+                    state['exp_avg'] = torch.zeros_like(p.data)
+                    # Exponential moving average of squared gradient values
+                    state['exp_avg_sq'] = torch.zeros_like(p.data)
+
+                state['step'] += 1
+
+                exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
+                beta1, beta2 = group['betas']
+
+                if grad.is_sparse:
+                    grad = grad.coalesce()  # the update is non-linear so indices must be unique
+                    grad_indices = grad._indices()
+                    grad_values = grad._values()
+                    size = grad.size()
+
+                    def make_sparse(values):
+                        constructor = grad.new
+                        if grad_indices.dim() == 0 or values.dim() == 0:
+                            return constructor().resize_as_(grad)
+                        return constructor(grad_indices, values, size)
+
+                    # Decay the first and second moment running average coefficient
+                    #      old <- b * old + (1 - b) * new
+                    # <==> old += (1 - b) * (new - old)
+                    old_exp_avg_values = _safe_sparse_mask(exp_avg, grad)._values()
+                    exp_avg_update_values = grad_values.sub(old_exp_avg_values).mul_(1 - beta1)
+                    exp_avg.add_(make_sparse(exp_avg_update_values))
+                    old_exp_avg_sq_values = _safe_sparse_mask(exp_avg_sq, grad)._values()
+                    exp_avg_sq_update_values = grad_values.pow(2).sub_(old_exp_avg_sq_values).mul_(1 - beta2)
+                    exp_avg_sq.add_(make_sparse(exp_avg_sq_update_values))
+
+                    # Dense addition again is intended, avoiding another sparse_mask
+                    numer = exp_avg_update_values.add_(old_exp_avg_values)
+                    exp_avg_sq_update_values.add_(old_exp_avg_sq_values)
+                    denom = exp_avg_sq_update_values.sqrt_().add_(group['eps'])
+                    del exp_avg_update_values, exp_avg_sq_update_values
+
+                    bias_correction1 = 1 - beta1 ** state['step']
+                    bias_correction2 = 1 - beta2 ** state['step']
+                    step_size = group['lr'] * math.sqrt(bias_correction2) / bias_correction1
+
+                    p.data.add_(make_sparse(-step_size * numer.div_(denom)))
+
+                else:
+                    # Decay the first and second moment running average coefficient
+                    exp_avg.mul_(beta1).add_(1 - beta1, grad)
+                    exp_avg_sq.mul_(beta2).addcmul_(1 - beta2, grad, grad)
+                    denom = exp_avg_sq.sqrt().add_(group['eps'])
+
+                    bias_correction1 = 1 - beta1 ** state['step']
+                    bias_correction2 = 1 - beta2 ** state['step']
+                    step_size = group['lr'] * math.sqrt(bias_correction2) / bias_correction1
+
+                    p.data.addcdiv_(-step_size, exp_avg, denom)
+
+        return loss

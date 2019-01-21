@@ -2,11 +2,11 @@
 ``KnowledgeGraphField`` is a ``Field`` which stores a knowledge graph representation.
 """
 from typing import Callable, Dict, List, Set
+from collections import defaultdict
 
 import editdistance
 from overrides import overrides
 import torch
-from torch.autograd import Variable
 
 from allennlp.common import util
 from allennlp.common.checks import ConfigurationError
@@ -161,10 +161,13 @@ class KnowledgeGraphField(Field[Dict[str, torch.Tensor]]):
     def index(self, vocab: Vocabulary):
         self._indexed_entity_texts = {}
         for indexer_name, indexer in self._token_indexers.items():
-            indexer_arrays = []
+            indexer_arrays: Dict[str, List] = defaultdict(list)
+
             for entity_text in self.entity_texts:
-                indexer_arrays.append([indexer.token_to_indices(token, vocab) for token in entity_text])
-            self._indexed_entity_texts[indexer_name] = indexer_arrays
+                for index_name, indexed in indexer.tokens_to_indices(entity_text, vocab, indexer_name).items():
+                    indexer_arrays[index_name].append(indexed)
+
+            self._indexed_entity_texts.update(indexer_arrays)
 
     @overrides
     def get_padding_lengths(self) -> Dict[str, int]:
@@ -205,10 +208,7 @@ class KnowledgeGraphField(Field[Dict[str, torch.Tensor]]):
         return padding_lengths
 
     @overrides
-    def as_tensor(self,
-                  padding_lengths: Dict[str, int],
-                  cuda_device: int = -1,
-                  for_training: bool = True) -> Dict[str, torch.Tensor]:
+    def as_tensor(self, padding_lengths: Dict[str, int]) -> Dict[str, torch.Tensor]:
         tensors = {}
         desired_num_entities = padding_lengths['num_entities']
         desired_num_entity_tokens = padding_lengths['num_entity_tokens']
@@ -219,39 +219,23 @@ class KnowledgeGraphField(Field[Dict[str, torch.Tensor]]):
                                                           default_value=lambda: [])
             padded_arrays = []
             for padded_entity in padded_entities:
-                padded_array = indexer.pad_token_sequence(padded_entity,
-                                                          desired_num_entity_tokens,
-                                                          padding_lengths)
+                padded_array = indexer.pad_token_sequence({'key': padded_entity},
+                                                          {'key': desired_num_entity_tokens},
+                                                          padding_lengths)['key']
                 padded_arrays.append(padded_array)
-            tensor = None
-            if for_training:
-                tensor = Variable(torch.LongTensor(padded_arrays))
-            else:
-                with torch.no_grad():
-                    tensor = Variable(torch.LongTensor(padded_arrays))
-            tensors[indexer_name] = tensor if cuda_device == -1 else tensor.cuda(cuda_device)
+            tensor = torch.LongTensor(padded_arrays)
+            tensors[indexer_name] = tensor
         padded_linking_features = util.pad_sequence_to_length(self.linking_features,
                                                               desired_num_entities,
                                                               default_value=lambda: [])
         padded_linking_arrays = []
         default_feature_value = lambda: [0.0] * len(self._feature_extractors)
         for linking_features in padded_linking_features:
-            padded_features = util.pad_sequence_to_length(
-                linking_features,
-                desired_num_utterance_tokens,
-                default_value=default_feature_value
-            )
+            padded_features = util.pad_sequence_to_length(linking_features,
+                                                          desired_num_utterance_tokens,
+                                                          default_value=default_feature_value)
             padded_linking_arrays.append(padded_features)
-        linking_features_tensor = None
-        if for_training:
-            linking_features_tensor = Variable(
-                torch.FloatTensor(padded_linking_arrays))
-        else:
-            with torch.no_grad():
-                linking_features_tensor = Variable(
-                    torch.FloatTensor(padded_linking_arrays))
-        if cuda_device != -1:
-            linking_features_tensor = linking_features_tensor.cuda(cuda_device)
+        linking_features_tensor = torch.FloatTensor(padded_linking_arrays)
         return {'text': tensors, 'linking': linking_features_tensor}
 
     def _compute_linking_features(self) -> List[List[List[float]]]:
@@ -320,8 +304,10 @@ class KnowledgeGraphField(Field[Dict[str, torch.Tensor]]):
         # Our implementation basically just adds a duplicate token match feature that's specific to
         # numbers.  It'll break in some rare cases (e.g., "Which four had four million ..."), but
         # those shouldn't be a big deal.
-        if entity.startswith('fb:'):
-            # This check works because numbers are the only entities that don't start with "fb:".
+        if ":" in entity:
+            # This check works because numbers are the only entities that don't contain ":". All
+            # others in both WikiTables languages do (e.g.: fb:row.row.column_name,
+            # date_column:year, string:usl_a_league etc.).
             return 0.0
         return self._contains_exact_token_match(entity, entity_text, token, token_index, tokens)
 
@@ -382,7 +368,8 @@ class KnowledgeGraphField(Field[Dict[str, torch.Tensor]]):
                         token: Token,
                         token_index: int,
                         tokens: List[Token]) -> float:
-        if not entity.startswith('fb:row.row'):
+        # Check if the entity is a column name in one of the two WikiTables languages.
+        if not entity.startswith('fb:row.row') and "_column:" not in entity:
             return 0.0
         for neighbor in self.knowledge_graph.neighbors[entity]:
             if token.text in self._entity_text_exact_text[neighbor]:
@@ -395,7 +382,8 @@ class KnowledgeGraphField(Field[Dict[str, torch.Tensor]]):
                               token: Token,
                               token_index: int,
                               tokens: List[Token]) -> float:
-        if not entity.startswith('fb:row.row'):
+        # Check if the entity is a column name in one of the two WikiTables languages.
+        if not entity.startswith('fb:row.row') and '_column:' not in entity:
             return 0.0
         for neighbor in self.knowledge_graph.neighbors[entity]:
             if token.text in self._entity_text_exact_text[neighbor]:
@@ -415,9 +403,13 @@ class KnowledgeGraphField(Field[Dict[str, torch.Tensor]]):
             # Some tables have empty cells.
             return 0
         seen_entity_words = set()
+        token_index_left = token_index
         while token_index < len(tokens) and tokens[token_index].text in entity_words:
             seen_entity_words.add(tokens[token_index].text)
             token_index += 1
+        while token_index_left >= 0 and tokens[token_index_left].text in entity_words:
+            seen_entity_words.add(tokens[token_index_left].text)
+            token_index_left -= 1
         return len(seen_entity_words) / len(entity_words)
 
     def _span_lemma_overlap_fraction(self,
@@ -431,9 +423,13 @@ class KnowledgeGraphField(Field[Dict[str, torch.Tensor]]):
             # Some tables have empty cells.
             return 0
         seen_entity_lemmas = set()
+        token_index_left = token_index
         while token_index < len(tokens) and tokens[token_index].lemma_ in entity_lemmas:
             seen_entity_lemmas.add(tokens[token_index].lemma_)
             token_index += 1
+        while token_index_left >= 0 and tokens[token_index_left].lemma_ in entity_lemmas:
+            seen_entity_lemmas.add(tokens[token_index_left].lemma_)
+            token_index_left -= 1
         return len(seen_entity_lemmas) / len(entity_lemmas)
 
     # pylint: enable=unused-argument,no-self-use

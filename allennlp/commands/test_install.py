@@ -21,9 +21,11 @@ an installation by running the unit tests.
 import argparse
 import logging
 import os
+import pathlib
 
 import pytest
 
+import allennlp
 from allennlp.commands.subcommand import Subcommand
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -44,23 +46,23 @@ class TestInstall(Subcommand):
         return subparser
 
 
-def _get_project_root():
-    return os.path.abspath(
-            os.path.join(
-                    os.path.dirname(os.path.realpath(__file__)),
-                    os.pardir, os.pardir))
+def _get_module_root():
+    return pathlib.Path(allennlp.__file__).parent
 
 
 def _run_test(args: argparse.Namespace):
     initial_working_dir = os.getcwd()
-    project_root = _get_project_root()
-    logger.info("Changing directory to %s", project_root)
-    os.chdir(project_root)
-    test_dir = os.path.join(project_root, "tests")
+    module_parent = _get_module_root().parent
+    logger.info("Changing directory to %s", module_parent)
+    os.chdir(module_parent)
+    test_dir = os.path.join(module_parent, "allennlp")
     logger.info("Running tests at %s", test_dir)
     if args.run_all:
-        pytest.main([test_dir])
+        # TODO(nfliu): remove this when notebooks have been rewritten as markdown.
+        exit_code = pytest.main([test_dir, '--color=no', '-k', 'not notebooks_test'])
     else:
-        pytest.main([test_dir, '-k', 'not sniff_test and not notebooks_test'])
+        exit_code = pytest.main([test_dir, '--color=no', '-k', 'not sniff_test and not notebooks_test',
+                                 '-m', 'not java'])
     # Change back to original working directory after running tests
     os.chdir(initial_working_dir)
+    exit(exit_code)

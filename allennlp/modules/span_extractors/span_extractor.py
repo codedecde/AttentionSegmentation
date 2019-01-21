@@ -3,7 +3,6 @@ import torch
 from overrides import overrides
 
 from allennlp.common.registrable import Registrable
-from allennlp.common.params import Params
 
 class SpanExtractor(torch.nn.Module, Registrable):
     """
@@ -11,7 +10,7 @@ class SpanExtractor(torch.nn.Module, Registrable):
     SpanExtractors define methods for extracting and representing spans
     from a sentence.
 
-    SpanExtractors take a sequence tensor of shape (batch_size, timetsteps, embedding_dim)
+    SpanExtractors take a sequence tensor of shape (batch_size, timesteps, embedding_dim)
     and indices of shape (batch_size, num_spans, 2) and return a tensor of
     shape (batch_size, num_spans, ...), forming some representation of the
     spans.
@@ -43,7 +42,7 @@ class SpanExtractor(torch.nn.Module, Registrable):
         span_indices_mask : ``torch.LongTensor``, optional (default = ``None``).
             A tensor of shape (batch_size, num_spans) representing the valid
             spans in the ``indices`` tensor. This mask is optional because
-            somtimes it's easier to worry about masking after calling this
+            sometimes it's easier to worry about masking after calling this
             function, rather than passing a mask directly.
 
         Returns
@@ -64,9 +63,3 @@ class SpanExtractor(torch.nn.Module, Registrable):
         Returns the expected final dimension of the returned span representation.
         """
         raise NotImplementedError
-
-
-    @classmethod
-    def from_params(cls, params: Params) -> "SpanExtractor":
-        choice = params.pop_choice('type', cls.list_available())
-        return cls.by_name(choice).from_params(params)

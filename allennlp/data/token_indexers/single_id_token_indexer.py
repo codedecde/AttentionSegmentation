@@ -1,9 +1,9 @@
 from typing import Dict, List
+import itertools
 
 from overrides import overrides
 
 from allennlp.common.util import pad_sequence_to_length
-from allennlp.common import Params
 from allennlp.data.vocabulary import Vocabulary
 from allennlp.data.tokenizers.token import Token
 from allennlp.data.token_indexers.token_indexer import TokenIndexer
@@ -21,11 +21,22 @@ class SingleIdTokenIndexer(TokenIndexer[int]):
     lowercase_tokens : ``bool``, optional (default=``False``)
         If ``True``, we will call ``token.lower()`` before getting an index for the token from the
         vocabulary.
+    start_tokens : ``List[str]``, optional (default=``None``)
+        These are prepended to the tokens provided to ``tokens_to_indices``.
+    end_tokens : ``List[str]``, optional (default=``None``)
+        These are appended to the tokens provided to ``tokens_to_indices``.
     """
     # pylint: disable=no-self-use
-    def __init__(self, namespace: str = 'tokens', lowercase_tokens: bool = False) -> None:
+    def __init__(self,
+                 namespace: str = 'tokens',
+                 lowercase_tokens: bool = False,
+                 start_tokens: List[str] = None,
+                 end_tokens: List[str] = None) -> None:
         self.namespace = namespace
         self.lowercase_tokens = lowercase_tokens
+
+        self._start_tokens = [Token(st) for st in (start_tokens or [])]
+        self._end_tokens = [Token(et) for et in (end_tokens or [])]
 
     @overrides
     def count_vocab_items(self, token: Token, counter: Dict[str, Dict[str, int]]):
@@ -38,17 +49,24 @@ class SingleIdTokenIndexer(TokenIndexer[int]):
             counter[self.namespace][text] += 1
 
     @overrides
-    def token_to_indices(self, token: Token, vocabulary: Vocabulary) -> int:
-        if getattr(token, 'text_id', None) is not None:
-            # `text_id` being set on the token means that we aren't using the vocab, we just use
-            # this id instead.
-            index = token.text_id
-        else:
-            text = token.text
-            if self.lowercase_tokens:
-                text = text.lower()
-            index = vocabulary.get_token_index(text, self.namespace)
-        return index
+    def tokens_to_indices(self,
+                          tokens: List[Token],
+                          vocabulary: Vocabulary,
+                          index_name: str) -> Dict[str, List[int]]:
+        indices: List[int] = []
+
+        for token in itertools.chain(self._start_tokens, tokens, self._end_tokens):
+            if getattr(token, 'text_id', None) is not None:
+                # `text_id` being set on the token means that we aren't using the vocab, we just use
+                # this id instead.
+                indices.append(token.text_id)
+            else:
+                text = token.text
+                if self.lowercase_tokens:
+                    text = text.lower()
+                indices.append(vocabulary.get_token_index(text, self.namespace))
+
+        return {index_name: indices}
 
     @overrides
     def get_padding_token(self) -> int:
@@ -60,14 +78,8 @@ class SingleIdTokenIndexer(TokenIndexer[int]):
 
     @overrides
     def pad_token_sequence(self,
-                           tokens: List[int],
-                           desired_num_tokens: int,
-                           padding_lengths: Dict[str, int]) -> List[int]:  # pylint: disable=unused-argument
-        return pad_sequence_to_length(tokens, desired_num_tokens)
-
-    @classmethod
-    def from_params(cls, params: Params) -> 'SingleIdTokenIndexer':
-        namespace = params.pop('namespace', 'tokens')
-        lowercase_tokens = params.pop_bool('lowercase_tokens', False)
-        params.assert_empty(cls.__name__)
-        return cls(namespace=namespace, lowercase_tokens=lowercase_tokens)
+                           tokens: Dict[str, List[int]],
+                           desired_num_tokens: Dict[str, int],
+                           padding_lengths: Dict[str, int]) -> Dict[str, List[int]]:  # pylint: disable=unused-argument
+        return {key: pad_sequence_to_length(val, desired_num_tokens[key])
+                for key, val in tokens.items()}

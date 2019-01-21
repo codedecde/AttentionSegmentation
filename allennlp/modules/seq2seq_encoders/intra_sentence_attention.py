@@ -2,9 +2,8 @@ from overrides import overrides
 import torch
 from torch.nn import Linear
 
-from allennlp.common import Params
 from allennlp.common.checks import ConfigurationError
-from allennlp.modules.matrix_attention import MatrixAttention
+from allennlp.modules.matrix_attention.legacy_matrix_attention import LegacyMatrixAttention
 from allennlp.modules.seq2seq_encoders.seq2seq_encoder import Seq2SeqEncoder
 from allennlp.modules.similarity_functions import DotProductSimilarity, SimilarityFunction
 from allennlp.modules.similarity_functions import MultiHeadedSimilarity
@@ -44,7 +43,7 @@ class IntraSentenceAttentionEncoder(Seq2SeqEncoder):
         :func:`~allennlp.nn.util.combine_tensors`; see that function for more detail on exactly how
         this works, but some simple examples are ``"1,2"`` for concatenation (the default),
         ``"1+2"`` for adding the two, or ``"2"`` for only keeping the attention representation.
-    output_dim : ``bool``, optional (default = None)
+    output_dim : ``int``, optional (default = None)
         The dimension of an optional output projection.
     """
     def __init__(self,
@@ -61,7 +60,7 @@ class IntraSentenceAttentionEncoder(Seq2SeqEncoder):
         else:
             self._projection = lambda x: x
             projection_dim = input_dim
-        self._matrix_attention = MatrixAttention(similarity_function)
+        self._matrix_attention = LegacyMatrixAttention(similarity_function)
         self._num_attention_heads = num_attention_heads
         if isinstance(similarity_function, MultiHeadedSimilarity):
             if num_attention_heads == 1:
@@ -108,7 +107,7 @@ class IntraSentenceAttentionEncoder(Seq2SeqEncoder):
             similarity_matrix = similarity_matrix.permute(0, 1, 3, 2)
 
         # Shape: (batch_size, sequence_length, [num_heads,] sequence_length)
-        intra_sentence_attention = util.last_dim_softmax(similarity_matrix.contiguous(), mask)
+        intra_sentence_attention = util.masked_softmax(similarity_matrix.contiguous(), mask)
 
         # Shape: (batch_size, sequence_length, projection_dim)
         output_token_representation = self._projection(tokens)
@@ -137,19 +136,3 @@ class IntraSentenceAttentionEncoder(Seq2SeqEncoder):
         # Shape: (batch_size, sequence_length, combination_dim)
         combined_tensors = util.combine_tensors(self._combination, [tokens, attended_sentence])
         return self._output_projection(combined_tensors)
-
-    @classmethod
-    def from_params(cls, params: Params) -> 'IntraSentenceAttentionEncoder':
-        input_dim = params.pop_int('input_dim')
-        projection_dim = params.pop_int('projection_dim', None)
-        similarity_function = SimilarityFunction.from_params(params.pop('similarity_function', {}))
-        num_attention_heads = params.pop_int('num_attention_heads', 1)
-        combination = params.pop('combination', '1,2')
-        output_dim = params.pop_int('output_dim', None)
-        params.assert_empty(cls.__name__)
-        return cls(input_dim=input_dim,
-                   projection_dim=projection_dim,
-                   similarity_function=similarity_function,
-                   num_attention_heads=num_attention_heads,
-                   combination=combination,
-                   output_dim=output_dim)

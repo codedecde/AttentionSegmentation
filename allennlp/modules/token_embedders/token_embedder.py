@@ -1,6 +1,6 @@
 import torch
 
-from allennlp.common import Params, Registrable
+from allennlp.common import Registrable
 from allennlp.data import Vocabulary
 
 class TokenEmbedder(torch.nn.Module, Registrable):
@@ -26,7 +26,9 @@ class TokenEmbedder(torch.nn.Module, Registrable):
         """
         raise NotImplementedError
 
-    @classmethod
-    def from_params(cls, vocab: Vocabulary, params: Params) -> 'TokenEmbedder':
-        choice = params.pop_choice('type', cls.list_available())
-        return cls.by_name(choice).from_params(vocab, params)
+    def extend_vocab(self, extended_vocab: Vocabulary, vocab_namespace: str = None):
+        """
+        Assures that this ``TokenEmbedder`` can work with extended vocabulary.
+        Unless overridden by concrete ``TokenEmbedder``, it is no-op.
+        """
+        pass

@@ -1,5 +1,5 @@
 import copy
-import os
+from typing import Any, Dict, Set, Union, Iterable
 
 from numpy.testing import assert_allclose
 import torch
@@ -23,7 +23,8 @@ class ModelTestCase(AllenNlpTestCase):
         params = Params.from_file(self.param_file)
 
         reader = DatasetReader.from_params(params['dataset_reader'])
-        instances = reader.read(dataset_file)
+        # The dataset reader might be lazy, but a lazy list here breaks some of our tests.
+        instances = list(reader.read(str(dataset_file)))
         # Use parameters for vocabulary if they are present in the config file, so that choices like
         # "non_padded_namespaces", "min_count" etc. can be set if needed.
         if 'vocabulary' in params:
@@ -33,7 +34,7 @@ class ModelTestCase(AllenNlpTestCase):
             vocab = Vocabulary.from_instances(instances)
         self.vocab = vocab
         self.instances = instances
-        self.model = Model.from_params(self.vocab, params['model'])
+        self.model = Model.from_params(vocab=self.vocab, params=params['model'])
 
         # TODO(joelgrus) get rid of these
         # (a lot of the model tests use them, so they'll have to be changed)
@@ -43,10 +44,34 @@ class ModelTestCase(AllenNlpTestCase):
     def ensure_model_can_train_save_and_load(self,
                                              param_file: str,
                                              tolerance: float = 1e-4,
-                                             cuda_device: int = -1):
-        save_dir = os.path.join(self.TEST_DIR, "save_and_load_test")
-        archive_file = os.path.join(save_dir, "model.tar.gz")
-        model = train_model_from_file(param_file, save_dir)
+                                             cuda_device: int = -1,
+                                             gradients_to_ignore: Set[str] = None,
+                                             overrides: str = ""):
+        """
+        Parameters
+        ----------
+        param_file : ``str``
+            Path to a training configuration file that we will use to train the model for this
+            test.
+        tolerance : ``float``, optional (default=1e-4)
+            When comparing model predictions between the originally-trained model and the model
+            after saving and loading, we will use this tolerance value (passed as ``rtol`` to
+            ``numpy.testing.assert_allclose``).
+        cuda_device : ``int``, optional (default=-1)
+            The device to run the test on.
+        gradients_to_ignore : ``Set[str]``, optional (default=None)
+            This test runs a gradient check to make sure that we're actually computing gradients
+            for all of the parameters in the model.  If you really want to ignore certain
+            parameters when doing that check, you can pass their names here.  This is not
+            recommended unless you're `really` sure you don't need to have non-zero gradients for
+            those parameters (e.g., some of the beam search / state machine models have
+            infrequently-used parameters that are hard to force the model to use in a small test).
+        overrides : ``str``, optional (default = "")
+            A JSON string that we will use to override values in the input parameter file.
+        """
+        save_dir = self.TEST_DIR / "save_and_load_test"
+        archive_file = save_dir / "model.tar.gz"
+        model = train_model_from_file(param_file, save_dir, overrides=overrides)
         loaded_model = load_archive(archive_file, cuda_device=cuda_device).model
         state_keys = model.state_dict().keys()
         loaded_state_keys = loaded_model.state_dict().keys()
@@ -70,15 +95,15 @@ class ModelTestCase(AllenNlpTestCase):
         # the same result out.
         model_dataset = reader.read(params['validation_data_path'])
         iterator.index_with(model.vocab)
-        model_batch = next(iterator(model_dataset, shuffle=False, cuda_device=cuda_device))
+        model_batch = next(iterator(model_dataset, shuffle=False))
 
         loaded_dataset = reader.read(params['validation_data_path'])
         iterator2.index_with(loaded_model.vocab)
-        loaded_batch = next(iterator2(loaded_dataset, shuffle=False, cuda_device=cuda_device))
+        loaded_batch = next(iterator2(loaded_dataset, shuffle=False))
 
         # Check gradients are None for non-trainable parameters and check that
         # trainable parameters receive some gradient if they are trainable.
-        self.check_model_computes_gradients_correctly(model, model_batch)
+        self.check_model_computes_gradients_correctly(model, model_batch, gradients_to_ignore)
 
         # The datasets themselves should be identical.
         assert model_batch.keys() == loaded_batch.keys()
@@ -112,9 +137,9 @@ class ModelTestCase(AllenNlpTestCase):
         return model, loaded_model
 
     def assert_fields_equal(self, field1, field2, name: str, tolerance: float = 1e-6) -> None:
-        if isinstance(field1, torch.autograd.Variable):
-            assert_allclose(field1.data.cpu().numpy(),
-                            field2.data.cpu().numpy(),
+        if isinstance(field1, torch.Tensor):
+            assert_allclose(field1.detach().cpu().numpy(),
+                            field2.detach().cpu().numpy(),
                             rtol=tolerance,
                             err_msg=name)
         elif isinstance(field1, dict):
@@ -134,23 +159,35 @@ class ModelTestCase(AllenNlpTestCase):
         elif isinstance(field1, (float, int)):
             assert_allclose([field1], [field2], rtol=tolerance, err_msg=name)
         else:
-            assert field1 == field2
+            if field1 != field2:
+                for key in field1.__dict__:
+                    print(key, getattr(field1, key) == getattr(field2, key))
+            assert field1 == field2, f"{name}, {type(field1)}, {type(field2)}"
 
     @staticmethod
-    def check_model_computes_gradients_correctly(model, model_batch):
+    def check_model_computes_gradients_correctly(model: Model,
+                                                 model_batch: Dict[str, Union[Any, Dict[str, Any]]],
+                                                 params_to_ignore: Set[str] = None):
+        print("Checking gradients")
         model.zero_grad()
         result = model(**model_batch)
         result["loss"].backward()
         has_zero_or_none_grads = {}
         for name, parameter in model.named_parameters():
             zeros = torch.zeros(parameter.size())
+            if params_to_ignore and name in params_to_ignore:
+                continue
             if parameter.requires_grad:
 
                 if parameter.grad is None:
                     has_zero_or_none_grads[name] = "No gradient computed (i.e parameter.grad is None)"
+
+                elif parameter.grad.is_sparse or parameter.grad.data.is_sparse:
+                    pass
+
                 # Some parameters will only be partially updated,
                 # like embeddings, so we just check that any gradient is non-zero.
-                elif (parameter.grad.data.cpu() == zeros).all():
+                elif (parameter.grad.cpu() == zeros).all():
                     has_zero_or_none_grads[name] = f"zeros with shape ({tuple(parameter.grad.size())})"
             else:
                 assert parameter.grad is None
@@ -160,27 +197,40 @@ class ModelTestCase(AllenNlpTestCase):
                 print(f"Parameter: {name} had incorrect gradient: {grad}")
             raise Exception("Incorrect gradients found. See stdout for more info.")
 
-    def ensure_batch_predictions_are_consistent(self):
+    def ensure_batch_predictions_are_consistent(
+            self,
+            keys_to_ignore: Iterable[str] = ()):
+        """
+        Ensures that the model performs the same on a batch of instances as on individual instances.
+        Ignores metrics matching the regexp .*loss.* and those specified explicitly.
+
+        Parameters
+        ----------
+        keys_to_ignore : ``Iterable[str]``, optional (default=())
+            Names of metrics that should not be taken into account, e.g. "batch_weight".
+        """
         self.model.eval()
         single_predictions = []
         for i, instance in enumerate(self.instances):
             dataset = Batch([instance])
-            tensors = dataset.as_tensor_dict(dataset.get_padding_lengths(), for_training=False)
+            tensors = dataset.as_tensor_dict(dataset.get_padding_lengths())
             result = self.model(**tensors)
             single_predictions.append(result)
         full_dataset = Batch(self.instances)
-        batch_tensors = full_dataset.as_tensor_dict(full_dataset.get_padding_lengths(), for_training=False)
+        batch_tensors = full_dataset.as_tensor_dict(full_dataset.get_padding_lengths())
         batch_predictions = self.model(**batch_tensors)
         for i, instance_predictions in enumerate(single_predictions):
             for key, single_predicted in instance_predictions.items():
                 tolerance = 1e-6
-                if key == 'loss':
+                if 'loss' in key:
                     # Loss is particularly unstable; we'll just be satisfied if everything else is
                     # close.
                     continue
+                if key in keys_to_ignore:
+                    continue
                 single_predicted = single_predicted[0]
                 batch_predicted = batch_predictions[key][i]
-                if isinstance(single_predicted, torch.autograd.Variable):
+                if isinstance(single_predicted, torch.Tensor):
                     if single_predicted.size() != batch_predicted.size():
                         slices = tuple(slice(0, size) for size in single_predicted.size())
                         batch_predicted = batch_predicted[slices]

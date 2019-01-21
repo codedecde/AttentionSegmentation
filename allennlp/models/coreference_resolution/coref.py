@@ -4,15 +4,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
-from torch.autograd import Variable
 from overrides import overrides
 
-from allennlp.common import Params
 from allennlp.data import Vocabulary
 from allennlp.models.model import Model
 from allennlp.modules.token_embedders import Embedding
 from allennlp.modules import FeedForward
-from allennlp.modules import Seq2SeqEncoder, TimeDistributed, TextFieldEmbedder, SpanPruner
+from allennlp.modules import Seq2SeqEncoder, TimeDistributed, TextFieldEmbedder, Pruner
 from allennlp.modules.span_extractors import SelfAttentiveSpanExtractor, EndpointSpanExtractor
 from allennlp.nn import util, InitializerApplicator, RegularizerApplicator
 from allennlp.training.metrics import MentionRecall, ConllCorefScores
@@ -83,7 +81,7 @@ class CoreferenceResolver(Model):
         feedforward_scorer = torch.nn.Sequential(
                 TimeDistributed(mention_feedforward),
                 TimeDistributed(torch.nn.Linear(mention_feedforward.get_output_dim(), 1)))
-        self._mention_pruner = SpanPruner(feedforward_scorer)
+        self._mention_pruner = Pruner(feedforward_scorer)
         self._antecedent_scorer = TimeDistributed(torch.nn.Linear(antecedent_feedforward.get_output_dim(), 1))
 
         self._endpoint_span_extractor = EndpointSpanExtractor(context_layer.get_output_dim(),
@@ -278,7 +276,7 @@ class CoreferenceResolver(Model):
             # probability assigned to all valid antecedents. This is a valid objective for
             # clustering as we don't mind which antecedent is predicted, so long as they are in
             #  the same coreference cluster.
-            coreference_log_probs = util.last_dim_log_softmax(coreference_scores, top_span_mask)
+            coreference_log_probs = util.masked_log_softmax(coreference_scores, top_span_mask)
             correct_antecedent_log_probs = coreference_log_probs + gold_antecedent_labels.log()
             negative_marginal_log_likelihood = -util.logsumexp(correct_antecedent_log_probs).sum()
 
@@ -286,6 +284,9 @@ class CoreferenceResolver(Model):
             self._conll_coref_scores(top_spans, valid_antecedent_indices, predicted_antecedents, metadata)
 
             output_dict["loss"] = negative_marginal_log_likelihood
+
+        if metadata is not None:
+            output_dict["document"] = [x["original_text"] for x in metadata]
         return output_dict
 
     @overrides
@@ -311,17 +312,17 @@ class CoreferenceResolver(Model):
 
         # A tensor of shape (batch_size, num_spans_to_keep, 2), representing
         # the start and end indices of each span.
-        batch_top_spans = output_dict["top_spans"].data.cpu()
+        batch_top_spans = output_dict["top_spans"].detach().cpu()
 
         # A tensor of shape (batch_size, num_spans_to_keep) representing, for each span,
         # the index into ``antecedent_indices`` which specifies the antecedent span. Additionally,
         # the index can be -1, specifying that the span has no predicted antecedent.
-        batch_predicted_antecedents = output_dict["predicted_antecedents"].data.cpu()
+        batch_predicted_antecedents = output_dict["predicted_antecedents"].detach().cpu()
 
         # A tensor of shape (num_spans_to_keep, max_antecedents), representing the indices
         # of the predicted antecedents with respect to the 2nd dimension of ``batch_top_spans``
         # for each antecedent we considered.
-        antecedent_indices = output_dict["antecedent_indices"].data.cpu()
+        antecedent_indices = output_dict["antecedent_indices"].detach().cpu()
         batch_clusters: List[List[List[Tuple[int, int]]]] = []
 
         # Calling zip() on two tensors results in an iterator over their
@@ -344,10 +345,11 @@ class CoreferenceResolver(Model):
                 # most likely antecedent.
                 predicted_index = antecedent_indices[i, predicted_antecedent]
 
-                antecedent_span = (top_spans[predicted_index, 0],
-                                   top_spans[predicted_index, 1])
+                antecedent_span = (top_spans[predicted_index, 0].item(),
+                                   top_spans[predicted_index, 1].item())
+
                 # Check if we've seen the span before.
-                if antecedent_span in spans_to_cluster_ids.keys():
+                if antecedent_span in spans_to_cluster_ids:
                     predicted_cluster_id: int = spans_to_cluster_ids[antecedent_span]
                 else:
                     # We start a new cluster.
@@ -358,7 +360,7 @@ class CoreferenceResolver(Model):
                     spans_to_cluster_ids[antecedent_span] = predicted_cluster_id
 
                 # Now add the span we are currently considering.
-                span_start, span_end = span
+                span_start, span_end = span[0].item(), span[1].item()
                 clusters[predicted_cluster_id].append((span_start, span_end))
                 spans_to_cluster_ids[(span_start, span_end)] = predicted_cluster_id
             batch_clusters.append(clusters)
@@ -576,43 +578,8 @@ class CoreferenceResolver(Model):
 
         # Shape: (batch_size, num_spans_to_keep, 1)
         shape = [antecedent_scores.size(0), antecedent_scores.size(1), 1]
-        dummy_scores = Variable(antecedent_scores.data.new(*shape).fill_(0), requires_grad=False)
+        dummy_scores = antecedent_scores.new_zeros(*shape)
 
         # Shape: (batch_size, num_spans_to_keep, max_antecedents + 1)
         coreference_scores = torch.cat([dummy_scores, antecedent_scores], -1)
         return coreference_scores
-
-    @classmethod
-    def from_params(cls, vocab: Vocabulary, params: Params) -> "CoreferenceResolver":
-        embedder_params = params.pop("text_field_embedder")
-        text_field_embedder = TextFieldEmbedder.from_params(vocab, embedder_params)
-        context_layer = Seq2SeqEncoder.from_params(params.pop("context_layer"))
-        mention_feedforward = FeedForward.from_params(params.pop("mention_feedforward"))
-        antecedent_feedforward = FeedForward.from_params(params.pop("antecedent_feedforward"))
-
-        feature_size = params.pop_int("feature_size")
-        max_span_width = params.pop_int("max_span_width")
-        spans_per_word = params.pop_float("spans_per_word")
-        max_antecedents = params.pop_int("max_antecedents")
-        lexical_dropout = params.pop_float("lexical_dropout", 0.2)
-
-        init_params = params.pop("initializer", None)
-        reg_params = params.pop("regularizer", None)
-        initializer = (InitializerApplicator.from_params(init_params)
-                       if init_params is not None
-                       else InitializerApplicator())
-        regularizer = RegularizerApplicator.from_params(reg_params) if reg_params is not None else None
-
-        params.assert_empty(cls.__name__)
-        return cls(vocab=vocab,
-                   text_field_embedder=text_field_embedder,
-                   context_layer=context_layer,
-                   mention_feedforward=mention_feedforward,
-                   antecedent_feedforward=antecedent_feedforward,
-                   feature_size=feature_size,
-                   max_span_width=max_span_width,
-                   spans_per_word=spans_per_word,
-                   max_antecedents=max_antecedents,
-                   lexical_dropout=lexical_dropout,
-                   initializer=initializer,
-                   regularizer=regularizer)

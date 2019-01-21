@@ -2,7 +2,7 @@ from typing import Dict
 
 import torch
 
-from allennlp.common import Params, Registrable
+from allennlp.common import Registrable
 from allennlp.data import Vocabulary
 
 class TextFieldEmbedder(torch.nn.Module, Registrable):
@@ -50,7 +50,9 @@ class TextFieldEmbedder(torch.nn.Module, Registrable):
         """
         raise NotImplementedError
 
-    @classmethod
-    def from_params(cls, vocab: Vocabulary, params: Params) -> 'TextFieldEmbedder':
-        choice = params.pop_choice('type', cls.list_available(), default_to_first_choice=True)
-        return cls.by_name(choice).from_params(vocab, params)
+    def extend_vocab(self, extended_vocab: Vocabulary) -> None:
+        """
+        Assures that this ``TextFieldEmbedder`` can work with extended vocabulary.
+        Unless overridden by concrete ``TextFieldEmbedder``, it is no-op.
+        """
+        pass

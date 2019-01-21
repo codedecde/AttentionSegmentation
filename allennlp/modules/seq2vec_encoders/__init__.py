@@ -12,6 +12,7 @@ The available Seq2Vec encoders are
 * :class:`"cnn" <allennlp.modules.seq2vec_encoders.cnn_encoder.CnnEncoder>`
 * :class:`"augmented_lstm" <allennlp.modules.augmented_lstm.AugmentedLstm>`
 * :class:`"alternating_lstm" <allennlp.modules.stacked_alternating_lstm.StackedAlternatingLstm>`
+* :class:`"stacked_bidirectional_lstm" <allennlp.modules.stacked_bidirectional_lstm.StackedBidirectionalLstm>`
 """
 
 from typing import Type
@@ -21,11 +22,13 @@ import torch
 from allennlp.common import Params
 from allennlp.common.checks import ConfigurationError
 from allennlp.modules.seq2vec_encoders.cnn_encoder import CnnEncoder
+from allennlp.modules.seq2vec_encoders.cnn_highway_encoder import CnnHighwayEncoder
 from allennlp.modules.seq2vec_encoders.boe_encoder import BagOfEmbeddingsEncoder
 from allennlp.modules.seq2vec_encoders.pytorch_seq2vec_wrapper import PytorchSeq2VecWrapper
 from allennlp.modules.seq2vec_encoders.seq2vec_encoder import Seq2VecEncoder
 from allennlp.modules.augmented_lstm import AugmentedLstm
 from allennlp.modules.stacked_alternating_lstm import StackedAlternatingLstm
+from allennlp.modules.stacked_bidirectional_lstm import StackedBidirectionalLstm
 
 
 class _Seq2VecWrapper:
@@ -61,6 +64,7 @@ class _Seq2VecWrapper:
     def __call__(self, **kwargs) -> PytorchSeq2VecWrapper:
         return self.from_params(Params(kwargs))
 
+    # Logic requires custom from_params
     def from_params(self, params: Params) -> PytorchSeq2VecWrapper:
         if not params.pop('batch_first', True):
             raise ConfigurationError("Our encoder semantics assumes batch is always first!")
@@ -75,3 +79,4 @@ Seq2VecEncoder.register("lstm")(_Seq2VecWrapper(torch.nn.LSTM))
 Seq2VecEncoder.register("rnn")(_Seq2VecWrapper(torch.nn.RNN))
 Seq2VecEncoder.register("augmented_lstm")(_Seq2VecWrapper(AugmentedLstm))
 Seq2VecEncoder.register("alternating_lstm")(_Seq2VecWrapper(StackedAlternatingLstm))
+Seq2VecEncoder.register("stacked_bidirectional_lstm")(_Seq2VecWrapper(StackedBidirectionalLstm))

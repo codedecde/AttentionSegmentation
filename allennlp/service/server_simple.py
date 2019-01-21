@@ -8,11 +8,10 @@ and you want to use the default HTML, you could run this like
 
 ```
 python -m allennlp.service.server_simple \
-    --archive-path /path/to/trained/model/archive.tar.gz \
-    --predictor my-predictor-name \
-    --title "Demo of My Stuff" \
-    --field-name question --field-name passage --field-name hint \
-    --include-package my_stuff
+    --archive-path allennlp/tests/fixtures/bidaf/serialization/model.tar.gz \
+    --predictor machine-comprehension \
+    --title "Demo of the Machine Comprehension Text Fixture" \
+    --field-name question --field-name passage
 ```
 """
 from typing import List, Callable
@@ -28,12 +27,27 @@ from flask_cors import CORS
 from gevent.pywsgi import WSGIServer
 
 from allennlp.common import JsonDict
+from allennlp.common.checks import check_for_gpu
 from allennlp.common.util import import_submodules
 from allennlp.models.archival import load_archive
-from allennlp.service.predictors import Predictor
-from allennlp.service.server_flask import ServerError
+from allennlp.predictors import Predictor
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+class ServerError(Exception):
+    status_code = 400
+
+    def __init__(self, message, status_code=None, payload=None):
+        Exception.__init__(self)
+        self.message = message
+        if status_code is not None:
+            self.status_code = status_code
+        self.payload = payload
+
+    def to_dict(self):
+        error_dict = dict(self.payload or ())
+        error_dict['message'] = self.message
+        return error_dict
 
 
 def make_app(predictor: Predictor,
@@ -65,8 +79,8 @@ def make_app(predictor: Predictor,
             logger.error("app directory %s does not exist, aborting", static_dir)
             sys.exit(-1)
     elif static_dir is None and field_names is None:
-        logger.error("must specify either build_dir or field_names")
-        sys.exit(-1)
+        print("Neither build_dir nor field_names passed. Demo won't render on this port.\n"
+              "You must use nodejs + react app to interact with the server.")
 
     app = Flask(__name__)  # pylint: disable=invalid-name
 
@@ -101,6 +115,20 @@ def make_app(predictor: Predictor,
 
         return jsonify(prediction)
 
+    @app.route('/predict_batch', methods=['POST', 'OPTIONS'])
+    def predict_batch() -> Response:  # pylint: disable=unused-variable
+        """make a prediction using the specified model and return the results"""
+        if request.method == "OPTIONS":
+            return Response(response="", status=200)
+
+        data = request.get_json()
+
+        prediction = predictor.predict_batch_json(data)
+        if sanitizer is not None:
+            prediction = [sanitizer(p) for p in prediction]
+
+        return jsonify(prediction)
+
     @app.route('/<path:path>')
     def static_proxy(path: str) -> Response: # pylint: disable=unused-variable
         if static_dir is not None:
@@ -110,6 +138,14 @@ def make_app(predictor: Predictor,
 
     return app
 
+def _get_predictor(args: argparse.Namespace) -> Predictor:
+    check_for_gpu(args.cuda_device)
+    archive = load_archive(args.archive_path,
+                           weights_file=args.weights_file,
+                           cuda_device=args.cuda_device,
+                           overrides=args.overrides)
+
+    return Predictor.from_archive(archive, args.predictor)
 
 def main(args):
     # Executing this file with no extra options runs the simple service with the bidaf test fixture
@@ -118,11 +154,17 @@ def main(args):
 
     parser = argparse.ArgumentParser(description='Serve up a simple model')
 
-    parser.add_argument('--archive-path', type=str, help='path to trained archive file')
-    parser.add_argument('--predictor', type=str, help='name of predictor')
+    parser.add_argument('--archive-path', type=str, required=True, help='path to trained archive file')
+    parser.add_argument('--predictor', type=str, required=True, help='name of predictor')
+    parser.add_argument('--weights-file', type=str,
+                        help='a path that overrides which weights file to use')
+    parser.add_argument('--cuda-device', type=int, default=-1, help='id of GPU to use (if any)')
+    parser.add_argument('-o', '--overrides', type=str, default="",
+                        help='a JSON structure used to override the experiment configuration')
     parser.add_argument('--static-dir', type=str, help='serve index.html from this directory')
     parser.add_argument('--title', type=str, help='change the default page title', default="AllenNLP Demo")
-    parser.add_argument('--field-name', type=str, action='append', help='field names to include in the demo')
+    parser.add_argument('--field-name', type=str, action='append',
+                        help='field names to include in the demo')
     parser.add_argument('--port', type=int, default=8000, help='port to serve the demo on')
 
     parser.add_argument('--include-package',
@@ -137,9 +179,9 @@ def main(args):
     for package_name in args.include_package:
         import_submodules(package_name)
 
-    archive = load_archive(args.archive_path or 'tests/fixtures/bidaf/serialization/model.tar.gz')
-    predictor = Predictor.from_archive(archive, args.predictor or 'machine-comprehension')
-    field_names = args.field_name or ['passage', 'question']
+    predictor = _get_predictor(args)
+
+    field_names = args.field_name
 
     app = make_app(predictor=predictor,
                    field_names=field_names,

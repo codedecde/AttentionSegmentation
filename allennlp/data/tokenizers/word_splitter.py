@@ -3,10 +3,14 @@ from typing import List
 
 from overrides import overrides
 import spacy
+import ftfy
 
-from allennlp.common import Params, Registrable
+from pytorch_pretrained_bert.tokenization import BasicTokenizer as BertTokenizer
+
+from allennlp.common import Registrable
 from allennlp.common.util import get_spacy_model
 from allennlp.data.tokenizers.token import Token
+from allennlp.data.token_indexers.openai_transformer_byte_pair_indexer import text_standardize
 
 
 class WordSplitter(Registrable):
@@ -32,11 +36,6 @@ class WordSplitter(Registrable):
         Splits ``sentence`` into a list of :class:`Token` objects.
         """
         raise NotImplementedError
-
-    @classmethod
-    def from_params(cls, params: Params) -> 'WordSplitter':
-        choice = params.pop_choice('type', cls.list_available(), default_to_first_choice=True)
-        return cls.by_name(choice).from_params(params)
 
 
 @WordSplitter.register('simple')
@@ -100,11 +99,6 @@ class SimpleWordSplitter(WordSplitter):
     def _can_split(self, token: str):
         return token and token.lower() not in self.special_cases
 
-    @classmethod
-    def from_params(cls, params: Params) -> 'WordSplitter':
-        params.assert_empty(cls.__name__)
-        return cls()
-
 
 @WordSplitter.register('letters_digits')
 class LettersDigitsWordSplitter(WordSplitter):
@@ -118,11 +112,6 @@ class LettersDigitsWordSplitter(WordSplitter):
         tokens = [Token(m.group(), idx=m.start())
                   for m in re.finditer(r'[^\W\d_]+|\d+|\S', sentence)]
         return tokens
-
-    @classmethod
-    def from_params(cls, params: Params) -> 'WordSplitter':
-        params.assert_empty(cls.__name__)
-        return cls()
 
 
 @WordSplitter.register('just_spaces')
@@ -140,34 +129,10 @@ class JustSpacesWordSplitter(WordSplitter):
     def split_words(self, sentence: str) -> List[Token]:
         return [Token(t) for t in sentence.split()]
 
-    @classmethod
-    def from_params(cls, params: Params) -> 'WordSplitter':
-        params.assert_empty(cls.__name__)
-        return cls()
-
-
-@WordSplitter.register('nltk')
-class NltkWordSplitter(WordSplitter):
-    """
-    A ``WordSplitter`` that uses nltk's ``word_tokenize`` method.
-
-    I found that nltk is very slow, so I switched to using my own simple one, which is a good deal
-    faster.  But I'm adding this one back so that there's consistency with older versions of the
-    code, if you really want it.
-    """
-    @overrides
-    def split_words(self, sentence: str) -> List[Token]:
-        # Import is here because it's slow, and by default unnecessary.
-        from nltk.tokenize import word_tokenize
-        return [Token(t) for t in word_tokenize(sentence.lower())]
-
-    @classmethod
-    def from_params(cls, params: Params) -> 'WordSplitter':
-        params.assert_empty(cls.__name__)
-        return cls()
 
 def _remove_spaces(tokens: List[spacy.tokens.Token]) -> List[spacy.tokens.Token]:
     return [token for token in tokens if not token.is_space]
+
 
 @WordSplitter.register('spacy')
 class SpacyWordSplitter(WordSplitter):
@@ -192,11 +157,41 @@ class SpacyWordSplitter(WordSplitter):
         # This works because our Token class matches spacy's.
         return _remove_spaces(self.spacy(sentence))
 
-    @classmethod
-    def from_params(cls, params: Params) -> 'WordSplitter':
-        language = params.pop('language', 'en_core_web_sm')
-        pos_tags = params.pop_bool('pos_tags', False)
-        parse = params.pop_bool('parse', False)
-        ner = params.pop_bool('ner', False)
-        params.assert_empty(cls.__name__)
-        return cls(language, pos_tags, parse, ner)
+
+@WordSplitter.register('openai')
+class OpenAISplitter(WordSplitter):
+    """
+    For OpenAI transformer
+    """
+    def __init__(self, language: str = 'en_core_web_sm') -> None:
+        self.spacy = get_spacy_model(language, False, False, False)
+
+    @staticmethod
+    def _standardize(text):
+        return text_standardize(ftfy.fix_text(text))
+
+    @overrides
+    def batch_split_words(self, sentences: List[str]) -> List[List[Token]]:
+        standardized_sentences = [self._standardize(sentence) for sentence in sentences]
+        return [_remove_spaces(tokens)
+                for tokens in self.spacy.pipe(standardized_sentences, n_threads=-1)]
+
+    @overrides
+    def split_words(self, sentence: str) -> List[Token]:
+        # This works because our Token class matches spacy's.
+        return _remove_spaces(self.spacy(self._standardize(sentence)))
+
+
+@WordSplitter.register("bert-basic")
+class BertBasicWordSplitter(WordSplitter):
+    """
+    The ``BasicWordSplitter`` from the BERT implementation.
+    This is used to split a sentence into words.
+    Then the ``BertTokenIndexer`` converts each word into wordpieces.
+    """
+    def __init__(self, do_lower_case: bool = True) -> None:
+        self.basic_tokenizer = BertTokenizer(do_lower_case)
+
+    @overrides
+    def split_words(self, sentence: str) -> List[Token]:
+        return [Token(text) for text in self.basic_tokenizer.tokenize(sentence)]

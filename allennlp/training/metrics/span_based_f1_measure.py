@@ -1,17 +1,22 @@
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Callable
 from collections import defaultdict
 
 import torch
 
 from allennlp.common.checks import ConfigurationError
-from allennlp.nn.util import get_lengths_from_binary_sequence_mask, ones_like
+from allennlp.nn.util import get_lengths_from_binary_sequence_mask
 from allennlp.data.vocabulary import Vocabulary
 from allennlp.training.metrics.metric import Metric
 from allennlp.data.dataset_readers.dataset_utils.span_utils import (
         bio_tags_to_spans,
         bioul_tags_to_spans,
+        iob1_tags_to_spans,
+        bmes_tags_to_spans,
         TypedStringSpan
 )
+
+
+TAGS_TO_SPANS_FUNCTION_TYPE = Callable[[List[str], Optional[List[str]]], List[TypedStringSpan]]
 
 
 @Metric.register("span_f1")
@@ -24,13 +29,17 @@ class SpanBasedF1Measure(Metric):
     is not exactly the same as the perl script used to evaluate the CONLL 2005
     data - particularly, it does not consider continuations or reference spans
     as constituents of the original span. However, it is a close proxy, which
-    can be helpful for judging model peformance during training.
+    can be helpful for judging model performance during training. This metric
+    works properly when the spans are unlabeled (i.e., your labels are
+    simply "B", "I", "O" if using the "BIO" label encoding).
+
     """
     def __init__(self,
                  vocabulary: Vocabulary,
                  tag_namespace: str = "tags",
                  ignore_classes: List[str] = None,
-                 label_encoding: str = "BIO") -> None:
+                 label_encoding: Optional[str] = "BIO",
+                 tags_to_spans_function: Optional[TAGS_TO_SPANS_FUNCTION_TYPE] = None) -> None:
         """
         Parameters
         ----------
@@ -54,12 +63,26 @@ class SpanBasedF1Measure(Metric):
             spans in a BIO tagging scheme which are typically not included.
         label_encoding : ``str``, optional (default = "BIO")
             The encoding used to specify label span endpoints in the sequence.
-            Valid options are "BIO" or "BIOUL".
+            Valid options are "BIO", "IOB1", "BIOUL" or "BMES".
+        tags_to_spans_function: ``Callable``, optional (default = ``None``)
+            If ``label_encoding`` is ``None``, ``tags_to_spans_function`` will be
+            used to generate spans.
         """
-        if label_encoding not in ["BIO", "BIOUL"]:
-            raise ConfigurationError("Unknown label encoding - expected 'BIO' or 'BIOUL'.")
+        if label_encoding and tags_to_spans_function:
+            raise ConfigurationError(
+                    'Both label_encoding and tags_to_spans_function are provided. '
+                    'Set "label_encoding=None" explicitly to enable tags_to_spans_function.'
+                    )
+        if label_encoding:
+            if label_encoding not in ["BIO", "IOB1", "BIOUL", "BMES"]:
+                raise ConfigurationError("Unknown label encoding - expected 'BIO', 'IOB1', 'BIOUL', 'BMES'.")
+        elif tags_to_spans_function is None:
+            raise ConfigurationError(
+                    'At least one of the (label_encoding, tags_to_spans_function) should be provided.'
+                    )
 
         self._label_encoding = label_encoding
+        self._tags_to_spans_function = tags_to_spans_function
         self._label_vocabulary = vocabulary.get_index_to_token_vocabulary(tag_namespace)
         self._ignore_classes: List[str] = ignore_classes or []
 
@@ -93,8 +116,8 @@ class SpanBasedF1Measure(Metric):
             possible roles associated with it).
         """
         if mask is None:
-            mask = ones_like(gold_labels)
-        # Get the data from the Variables.
+            mask = torch.ones_like(gold_labels)
+
         predictions, gold_labels, mask, prediction_map = self.unwrap_to_tensors(predictions,
                                                                                 gold_labels,
                                                                                 mask, prediction_map)
@@ -130,12 +153,22 @@ class SpanBasedF1Measure(Metric):
             gold_string_labels = [self._label_vocabulary[label_id]
                                   for label_id in sequence_gold_label[:length].tolist()]
 
-            if self._label_encoding == "BIO":
-                predicted_spans = bio_tags_to_spans(predicted_string_labels, self._ignore_classes)
-                gold_spans = bio_tags_to_spans(gold_string_labels, self._ignore_classes)
+            tags_to_spans_function = None
+            # `label_encoding` is empty and `tags_to_spans_function` is provided.
+            if self._label_encoding is None and self._tags_to_spans_function:
+                tags_to_spans_function = self._tags_to_spans_function
+            # Search by `label_encoding`.
+            elif self._label_encoding == "BIO":
+                tags_to_spans_function = bio_tags_to_spans
+            elif self._label_encoding == "IOB1":
+                tags_to_spans_function = iob1_tags_to_spans
             elif self._label_encoding == "BIOUL":
-                predicted_spans = bioul_tags_to_spans(predicted_string_labels, self._ignore_classes)
-                gold_spans = bioul_tags_to_spans(gold_string_labels, self._ignore_classes)
+                tags_to_spans_function = bioul_tags_to_spans
+            elif self._label_encoding == "BMES":
+                tags_to_spans_function = bmes_tags_to_spans
+
+            predicted_spans = tags_to_spans_function(predicted_string_labels, self._ignore_classes)
+            gold_spans = tags_to_spans_function(gold_string_labels, self._ignore_classes)
 
             predicted_spans = self._handle_continued_spans(predicted_spans)
             gold_spans = self._handle_continued_spans(gold_spans)
@@ -157,10 +190,10 @@ class SpanBasedF1Measure(Metric):
         have a `C-` prepended to another valid tag) as part of the span that they are continuing.
         This is basically a massive hack to allow SRL models which produce a linear sequence of
         predictions to do something close to structured prediction. However, this means that to
-        compute the metric, these continutation spans need to be merged into the span to which
+        compute the metric, these continuation spans need to be merged into the span to which
         they refer. The way this is done is to simply consider the span for the continued argument
-        to start at the start index of the first occurence of the span and end at the end index
-        of the last occurence of the span. Handling this is important, because predicting continued
+        to start at the start index of the first occurrence of the span and end at the end index
+        of the last occurrence of the span. Handling this is important, because predicting continued
         spans is difficult and typically will effect overall average F1 score by ~ 2 points.
 
         Parameters

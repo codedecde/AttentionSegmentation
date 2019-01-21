@@ -7,6 +7,7 @@ import logging
 from collections import defaultdict
 from typing import Dict, List, Union, Iterator, Iterable
 
+import numpy
 import torch
 
 from allennlp.common.checks import ConfigurationError
@@ -69,8 +70,6 @@ class Batch(Iterable):
 
     def as_tensor_dict(self,
                        padding_lengths: Dict[str, Dict[str, int]] = None,
-                       cuda_device: int = -1,
-                       for_training: bool = True,
                        verbose: bool = False) -> Dict[str, Union[torch.Tensor, Dict[str, torch.Tensor]]]:
         # This complex return type is actually predefined elsewhere as a DataArray,
         # but we can't use it because mypy doesn't like it.
@@ -90,13 +89,6 @@ class Batch(Iterable):
 
             Entries in this dictionary are keyed first by field name (e.g., "question"), then by
             padding key (e.g., "num_tokens").
-        cuda_device : ``int``
-            If cuda_device >= 0, GPUs are available and Pytorch was compiled with CUDA support, the
-            tensor will be copied to the cuda_device specified.
-        for_training : ``bool``, optional (default=``True``)
-            If ``False``, we will pass the ``volatile=True`` flag when constructing variables,
-            which disables gradient computations in the graph.  This makes inference more efficient
-            (particularly in memory usage), but is incompatible with training models.
         verbose : ``bool``, optional (default=``False``)
             Should we output logging information when we're doing this padding?  If the batch is
             large, this is nice to have, because padding a large batch could take a long time.
@@ -142,7 +134,7 @@ class Batch(Iterable):
         if verbose:
             logger.info("Now actually padding instances to length: %s", str(lengths_to_use))
         for instance in self.instances:
-            for field, tensors in instance.as_tensor_dict(lengths_to_use, cuda_device, for_training).items():
+            for field, tensors in instance.as_tensor_dict(lengths_to_use).items():
                 field_tensors[field].append(tensors)
 
         # Finally, we combine the tensors that we got for each instance into one big tensor (or set
@@ -161,3 +153,25 @@ class Batch(Iterable):
     def index_instances(self, vocab: Vocabulary) -> None:
         for instance in self.instances:
             instance.index_fields(vocab)
+
+    def print_statistics(self) -> None:
+        # Make sure if has been indexed first
+        sequence_field_lengths: Dict[str, List] = defaultdict(list)
+        for instance in self.instances:
+            if not instance.indexed:
+                raise ConfigurationError("Instances must be indexed with vocabulary "
+                                         "before asking to print dataset statistics.")
+            for field, field_padding_lengths in instance.get_padding_lengths().items():
+                for key, value in field_padding_lengths.items():
+                    sequence_field_lengths[f"{field}.{key}"].append(value)
+
+        print("\n\n----Dataset Statistics----\n")
+        for name, lengths in sequence_field_lengths.items():
+            print(f"Statistics for {name}:")
+            print(f"\tLengths: Mean: {numpy.mean(lengths)}, Standard Dev: {numpy.std(lengths)}, "
+                  f"Max: {numpy.max(lengths)}, Min: {numpy.min(lengths)}")
+
+        print("\n10 Random instances: ")
+        for i in list(numpy.random.randint(len(self.instances), size=10)):
+            print(f"Instance {i}:")
+            print(f"\t{self.instances[i]}")

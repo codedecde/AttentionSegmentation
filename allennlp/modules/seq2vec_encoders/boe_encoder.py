@@ -1,9 +1,7 @@
 from overrides import overrides
 
 import torch
-from torch.autograd import Variable
 
-from allennlp.common import Params
 from allennlp.modules.seq2vec_encoders.seq2vec_encoder import Seq2VecEncoder
 from allennlp.nn.util import get_lengths_from_binary_sequence_mask
 
@@ -51,9 +49,9 @@ class BagOfEmbeddingsEncoder(Seq2VecEncoder):
                 length_mask = (lengths > 0)
 
                 # Set any length 0 to 1, to avoid dividing by zero.
-                lengths = torch.max(lengths, Variable(lengths.data.new().resize_(1).fill_(1)))
+                lengths = torch.max(lengths, lengths.new_ones(1))
             else:
-                lengths = Variable(tokens.data.new().resize_(1).fill_(tokens.size(1)), requires_grad=False)
+                lengths = tokens.new_full((1,), fill_value=tokens.size(1))
                 length_mask = None
 
             summed = summed / lengths.unsqueeze(-1).float()
@@ -62,11 +60,3 @@ class BagOfEmbeddingsEncoder(Seq2VecEncoder):
                 summed = summed * (length_mask > 0).float().unsqueeze(-1)
 
         return summed
-
-    @classmethod
-    def from_params(cls, params: Params) -> 'BagOfEmbeddingsEncoder':
-        embedding_dim = params.pop_int('embedding_dim')
-        averaged = params.pop_bool('averaged', default=None)
-        params.assert_empty(cls.__name__)
-        return cls(embedding_dim=embedding_dim,
-                   averaged=averaged)

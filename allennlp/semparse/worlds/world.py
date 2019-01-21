@@ -7,55 +7,11 @@ from nltk import Tree
 from nltk.sem.logic import ApplicationExpression, Expression, LambdaExpression, BasicType, Type
 
 from allennlp.semparse.type_declarations import type_declaration as types
+from allennlp.semparse.domain_languages.domain_language import ParsingError
+from allennlp.semparse.domain_languages.domain_language import nltk_tree_to_logical_form
 from allennlp.semparse import util as semparse_util
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-
-
-class ParsingError(Exception):
-    """
-    This exception gets raised when there is a parsing error during logical form processing.  This
-    might happen because you're not handling the full set of possible logical forms, for instance,
-    and having this error provides a consistent way to catch those errors and log how frequently
-    this occurs.
-    """
-    def __init__(self, message):
-        super(ParsingError, self).__init__()
-        self.message = message
-
-    def __str__(self):
-        return repr(self.message)
-
-
-class ExecutionError(Exception):
-    """
-    This exception gets raised when you're trying to execute a logical form that your executor does
-    not understand. This may be because your logical form contains a function with an invalid name
-    or a set of arguments whose types do not match those that the fuction expects.
-    """
-    def __init__(self, message):
-        super(ExecutionError, self).__init__()
-        self.message = message
-
-    def __str__(self):
-        return repr(self.message)
-
-
-def nltk_tree_to_logical_form(tree: Tree) -> str:
-    """
-    Given an ``nltk.Tree`` representing the syntax tree that generates a logical form, this method
-    produces the actual (lisp-like) logical form, with all of the non-terminal symbols converted
-    into the correct number of parentheses.
-    """
-    # nltk.Tree actually inherits from `list`, so you use `len()` to get the number of children.
-    # We're going to be explicit about checking length, instead of using `if tree:`, just to avoid
-    # any funny business nltk might have done (e.g., it's really odd if `if tree:` evaluates to
-    # `False` if there's a single leaf node with no children).
-    if len(tree) == 0:  # pylint: disable=len-as-condition
-        return tree.label()
-    if len(tree) == 1:
-        return tree[0].label()
-    return '(' + ' '.join(nltk_tree_to_logical_form(child) for child in tree) + ')'
 
 
 class World:
@@ -104,6 +60,10 @@ class World:
         self._logic_parser = types.DynamicTypeLogicParser(constant_type_prefixes=type_prefixes,
                                                           type_signatures=self.global_type_signatures)
         self._right_side_indexed_actions: Dict[str, List[Tuple[str, str]]] = None
+        # Caching this to avoid recompting it every time `get_valid_actions` is called.
+        self._valid_actions: Dict[str, List[str]] = None
+        # Caching this to avoid recompting it every time `get_multi_match_mapping` is called.
+        self._multi_match_mapping: Dict[Type, List[Type]] = None
 
     def get_name_mapping(self) -> Dict[str, str]:
         # Python 3.5 syntax for merging two dictionaries.
@@ -125,11 +85,15 @@ class World:
                 'lambda' in symbol)
 
     def get_valid_actions(self) -> Dict[str, List[str]]:
-        return types.get_valid_actions(self.get_name_mapping(),
-                                       self.get_type_signatures(),
-                                       self.get_basic_types(),
-                                       valid_starting_types=self.get_valid_starting_types(),
-                                       num_nested_lambdas=self._num_nested_lambdas)
+        if not self._valid_actions:
+            multi_match_mapping = self.get_multi_match_mapping()
+            self._valid_actions = types.get_valid_actions(self.get_name_mapping(),
+                                                          self.get_type_signatures(),
+                                                          self.get_basic_types(),
+                                                          valid_starting_types=self.get_valid_starting_types(),
+                                                          num_nested_lambdas=self._num_nested_lambdas,
+                                                          multi_match_mapping=multi_match_mapping)
+        return self._valid_actions
 
     def get_paths_to_root(self,
                           action: str,
@@ -217,6 +181,28 @@ class World:
         """
         raise NotImplementedError
 
+    def get_multi_match_mapping(self) -> Dict[Type, List[Type]]:
+        """
+        Returns a mapping from each `MultiMatchNamedBasicType` to all the `NamedBasicTypes` that it
+        matches.
+        """
+        if self._multi_match_mapping is None:
+            self._multi_match_mapping = {}
+            basic_types = self.get_basic_types()
+            for basic_type in basic_types:
+                if isinstance(basic_type, types.MultiMatchNamedBasicType):
+                    matched_types: List[str] = []
+                    # We need to check if each type in the `types_to_match` field for the given
+                    # MultiMatchNamedBasic type is itself in the set of basic types allowed in this
+                    # world, and add it to the mapping only if it is. Some basic types that the
+                    # multi match type can match with may be diallowed in the world due to the
+                    # instance-specific context.
+                    for type_ in basic_type.types_to_match:
+                        if type_ in basic_types:
+                            matched_types.append(type_)
+                    self._multi_match_mapping[basic_type] = matched_types
+        return self._multi_match_mapping
+
     def parse_logical_form(self,
                            logical_form: str,
                            remove_var_function: bool = True) -> Expression:
@@ -228,7 +214,7 @@ class World:
         logical_form : ``str``
             Logical form to parse
         remove_var_function : ``bool`` (optional)
-            ``var`` is a special function that some languages use within lambda founctions to
+            ``var`` is a special function that some languages use within lambda functions to
             indicate the usage of a variable. If your language uses it, and you do not want to
             include it in the parsed expression, set this flag. You may want to do this if you are
             generating an action sequence from this parsed expression, because it is easier to let
@@ -321,10 +307,17 @@ class World:
             raise ParsingError("Incomplete action sequence")
         left_side, right_side = remaining_actions.pop(0)
         if left_side != current_node.label():
-            logger.error("Current node: %s", current_node)
-            logger.error("Next action: %s -> %s", left_side, right_side)
-            logger.error("Remaining actions were: %s", remaining_actions)
-            raise ParsingError("Current node does not match next action")
+            mismatch = True
+            multi_match_mapping = {str(key): [str(value) for value in values] for key,
+                                   values in self.get_multi_match_mapping().items()}
+            current_label = current_node.label()
+            if current_label in multi_match_mapping and left_side in multi_match_mapping[current_label]:
+                mismatch = False
+            if mismatch:
+                logger.error("Current node: %s", current_node)
+                logger.error("Next action: %s -> %s", left_side, right_side)
+                logger.error("Remaining actions were: %s", remaining_actions)
+                raise ParsingError("Current node does not match next action")
         if right_side[0] == '[':
             # This is a non-terminal expansion, with more than one child node.
             for child_type in right_side[1:-1].split(', '):

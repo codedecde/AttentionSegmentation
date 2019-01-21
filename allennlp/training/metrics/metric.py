@@ -2,8 +2,6 @@ from typing import Dict, Optional, Tuple, Union
 import torch
 
 from allennlp.common.registrable import Registrable
-from allennlp.common.params import Params
-from allennlp.data.vocabulary import Vocabulary
 
 
 class Metric(Registrable):
@@ -40,19 +38,12 @@ class Metric(Registrable):
         """
         raise NotImplementedError
 
-    @classmethod
-    def from_params(cls, params: Params, vocab: Optional[Vocabulary] = None):
-        metric_type = params.pop_choice("type", cls.list_available())
-        if vocab:
-            params["vocabulary"] = vocab
-        return cls.by_name(metric_type)(**params.as_dict())  # type: ignore
-
     @staticmethod
-    def unwrap_to_tensors(*tensors):
+    def unwrap_to_tensors(*tensors: torch.Tensor):
         """
-        If you actually passed in Variables to a Metric instead of Tensors, there will be
+        If you actually passed gradient-tracking Tensors to a Metric, there will be
         a huge memory leak, because it will prevent garbage collection for the computation
         graph. This method ensures that you're using tensors directly and that they are on
         the CPU.
         """
-        return (x.data.cpu() if isinstance(x, torch.autograd.Variable) else x for x in tensors)
+        return (x.detach().cpu() if isinstance(x, torch.Tensor) else x for x in tensors)

@@ -132,7 +132,7 @@ def read_from_config_file(filepath):
     Returns:
         allennlp.common.Params: The parameters
     """
-    return Params.from_file(filepath)
+    return Params.pyhocon_from_file(filepath)
 
 
 def write_config_to_file(filepath, config):
@@ -140,7 +140,7 @@ def write_config_to_file(filepath, config):
     """
     with io.open(filepath, 'w', encoding='utf-8', errors='ignore') as fd:
         json.dump(fp=fd,
-                  obj=config.as_dict(quiet=True),
+                  obj=config.as_dict(quiet=True, infer_type_and_cast=True),
                   ensure_ascii=False, indent=4, sort_keys=True)
 
 

@@ -1,17 +1,23 @@
 """
 Various utilities that don't fit anwhere else.
 """
-
 from itertools import zip_longest, islice
-from typing import Any, Callable, Dict, List, Tuple, TypeVar, Iterable, Iterator
+from typing import Any, Callable, Dict, List, Tuple, TypeVar, Iterable, Iterator, Union
 import importlib
+import json
 import logging
 import pkgutil
 import random
-import resource
 import subprocess
 import sys
 import os
+import re
+
+try:
+    import resource
+except ImportError:
+    # resource doesn't exist on Windows systems
+    resource = None
 
 import torch
 import numpy
@@ -39,6 +45,7 @@ JsonDict = Dict[str, Any]  # pylint: disable=invalid-name
 START_SYMBOL = '@start@'
 END_SYMBOL = '@end@'
 
+
 def sanitize(x: Any) -> Any:  # pylint: disable=invalid-name,too-many-return-statements
     """
     Sanitize turns PyTorch and Numpy types into basic Python types so they
@@ -47,9 +54,7 @@ def sanitize(x: Any) -> Any:  # pylint: disable=invalid-name,too-many-return-sta
     if isinstance(x, (str, float, int, bool)):
         # x is already serializable
         return x
-    elif isinstance(x, torch.autograd.Variable):
-        return sanitize(x.data)
-    elif isinstance(x, torch._TensorBase):  # pylint: disable=protected-access
+    elif isinstance(x, torch.Tensor):
         # tensor needs to be converted to a list (and moved to cpu if necessary)
         return x.cpu().tolist()
     elif isinstance(x, numpy.ndarray):
@@ -69,8 +74,12 @@ def sanitize(x: Any) -> Any:  # pylint: disable=invalid-name,too-many-return-sta
         return x.text
     elif x is None:
         return "None"
+    elif hasattr(x, 'to_json'):
+        return x.to_json()
     else:
-        raise ValueError("cannot sanitize {} of type {}".format(x, type(x)))
+        raise ValueError(f"Cannot sanitize {x} of type {type(x)}. "
+                         "If this is your own custom class, add a `to_json(self)` method "
+                         "that returns a JSON-like object.")
 
 def group_by_count(iterable: List[Any], count: int, default_value: Any) -> List[List[Any]]:
     """
@@ -90,7 +99,7 @@ A = TypeVar('A')
 
 def lazy_groups_of(iterator: Iterator[A], group_size: int) -> Iterator[List[A]]:
     """
-    Takes an iterator and batches the invididual instances into lists of the
+    Takes an iterator and batches the individual instances into lists of the
     specified size. The last list may be smaller if there are instances left over.
     """
     return iter(lambda: list(islice(iterator, 0, group_size)), [])
@@ -210,9 +219,17 @@ def prepare_global_logging(serialization_dir: str, file_friendly_logging: bool) 
     serializezation_dir : ``str``, required.
         The directory to stream logs to.
     file_friendly_logging : ``bool``, required.
-        Whether logs should clean the output to prevent carridge returns
-        (used to update progress bars on a single terminal line).
+        Whether logs should clean the output to prevent carriage returns
+        (used to update progress bars on a single terminal line). This
+        option is typically only used if you are running in an environment
+        without a terminal.
     """
+
+    # If we don't have a terminal as stdout,
+    # force tqdm to be nicer.
+    if not sys.stdout.isatty():
+        file_friendly_logging = True
+
     Tqdm.set_slower_interval(file_friendly_logging)
     std_out_file = os.path.join(serialization_dir, "stdout.log")
     sys.stdout = TeeLogger(std_out_file, # type: ignore
@@ -264,11 +281,19 @@ def import_submodules(package_name: str) -> None:
     """
     importlib.invalidate_caches()
 
+    # Import at top level
     module = importlib.import_module(package_name)
-    path = getattr(module, '__path__', '')
+    path = getattr(module, '__path__', [])
+    path_string = '' if not path else path[0]
 
-    for _, name, _ in pkgutil.walk_packages(path):
-        importlib.import_module(package_name + '.' + name)
+    # walk_packages only finds immediate children, so need to recurse.
+    for module_finder, name, _ in pkgutil.walk_packages(path):
+        # Sometimes when you import third-party libraries that are on your path,
+        # `pkgutil.walk_packages` returns those too, so we need to skip them.
+        if path_string and module_finder.path != path_string:
+            continue
+        subpackage = f"{package_name}.{name}"
+        import_submodules(subpackage)
 
 
 def peak_memory_mb() -> float:
@@ -280,7 +305,7 @@ def peak_memory_mb() -> float:
 
     Only works on OSX and Linux, returns 0.0 otherwise.
     """
-    if sys.platform not in ('linux', 'darwin'):
+    if resource is None or sys.platform not in ('linux', 'darwin'):
         return 0.0
 
     # TODO(joelgrus): For whatever, our pinned version 0.521 of mypy does not like
@@ -341,3 +366,42 @@ def is_lazy(iterable: Iterable[A]) -> bool:
     which here just means it's not a list.
     """
     return not isinstance(iterable, list)
+
+def parse_cuda_device(cuda_device: Union[str, int, List[int]]) -> Union[int, List[int]]:
+    """
+    Disambiguates single GPU and multiple GPU settings for cuda_device param.
+    """
+    def from_list(strings):
+        if len(strings) > 1:
+            return [int(d) for d in strings]
+        elif len(strings) == 1:
+            return int(strings[0])
+        else:
+            return -1
+
+    if isinstance(cuda_device, str):
+        return from_list(re.split(r',\s*', cuda_device))
+    elif isinstance(cuda_device, int):
+        return cuda_device
+    elif isinstance(cuda_device, list):
+        return from_list(cuda_device)
+    else:
+        # TODO(brendanr): Determine why mypy can't tell that this matches the Union.
+        return int(cuda_device)  # type: ignore
+
+def get_frozen_and_tunable_parameter_names(model: torch.nn.Module) -> List:
+    frozen_parameter_names = []
+    tunable_parameter_names = []
+    for name, parameter in model.named_parameters():
+        if not parameter.requires_grad:
+            frozen_parameter_names.append(name)
+        else:
+            tunable_parameter_names.append(name)
+    return [frozen_parameter_names, tunable_parameter_names]
+
+def dump_metrics(file_path: str, metrics: Dict[str, Any], log: bool = False) -> None:
+    metrics_json = json.dumps(metrics, indent=2)
+    with open(file_path, "w") as metrics_file:
+        metrics_file.write(metrics_json)
+    if log:
+        logger.info("Metrics: %s", metrics_json)

@@ -1,27 +1,22 @@
 import logging
 import os
-from typing import Dict, List, Tuple, Set
+from functools import partial
+from typing import Dict, List, Tuple, Set, Any
 
 from overrides import overrides
 import torch
-from torch.autograd import Variable
 
-from allennlp.common import Params
 from allennlp.data import Vocabulary
-from allennlp.data.fields.production_rule_field import ProductionRuleArray
-from allennlp.models.model import Model
+from allennlp.data.fields.production_rule_field import ProductionRule
 from allennlp.models.archival import load_archive, Archive
-from allennlp.models.semantic_parsing.wikitables.wikitables_decoder_state import WikiTablesDecoderState
-from allennlp.models.semantic_parsing.wikitables.wikitables_decoder_step import WikiTablesDecoderStep
+from allennlp.models.model import Model
 from allennlp.models.semantic_parsing.wikitables.wikitables_semantic_parser import WikiTablesSemanticParser
-from allennlp.modules import TextFieldEmbedder, Seq2SeqEncoder, FeedForward
-from allennlp.modules.seq2vec_encoders import Seq2VecEncoder
-from allennlp.modules.similarity_functions import SimilarityFunction
-from allennlp.nn.decoding import ChecklistState
-from allennlp.nn.decoding.decoder_trainers import ExpectedRiskMinimization
-from allennlp.semparse import ParsingError
-from allennlp.semparse.type_declarations import wikitables_type_declaration as types
+from allennlp.modules import Attention, FeedForward, Seq2SeqEncoder, Seq2VecEncoder, TextFieldEmbedder
+from allennlp.semparse.type_declarations import wikitables_lambda_dcs as types
 from allennlp.semparse.worlds import WikiTablesWorld
+from allennlp.state_machines.states import CoverageState, ChecklistStatelet
+from allennlp.state_machines.trainers import ExpectedRiskMinimization
+from allennlp.state_machines.transition_functions import LinkingCoverageTransitionFunction
 from allennlp.training.metrics import Average
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -44,10 +39,9 @@ class WikiTablesErmSemanticParser(WikiTablesSemanticParser):
         The encoder to use for the input question. Passed to super class.
     entity_encoder : ``Seq2VecEncoder``
         The encoder to used for averaging the words of an entity. Passed to super class.
-    attention_function : ``SimilarityFunction``
+    attention : ``Attention``
         We compute an attention over the input question at each step of the decoder, using the
-        decoder hidden state as the query.  This is the similarity function we use for that
-        attention. Passed to super class.
+        decoder hidden state as the query.  Passed to the transition function.
     decoder_beam_size : ``int``
         Beam size to be used by the ExpectedRiskMinimization algorithm.
     decoder_num_finished_states : ``int``
@@ -56,6 +50,9 @@ class WikiTablesErmSemanticParser(WikiTablesSemanticParser):
     max_decoding_steps : ``int``
         Maximum number of steps the decoder should take before giving up. Used both during training
         and evaluation. Passed to super class.
+    add_action_bias : ``bool``, optional (default=True)
+        If ``True``, we will learn a bias weight for each action that gets used when predicting
+        that action, in addition to its embedding.  Passed to super class.
     normalize_beam_score_by_length : ``bool``, optional (default=False)
         Should we normalize the log-probabilities by length before renormalizing the beam? This was
         shown to work better for NML by Edunov et al., but that many not be the case for semantic
@@ -85,7 +82,7 @@ class WikiTablesErmSemanticParser(WikiTablesSemanticParser):
         The directory to find tables when evaluating logical forms.  We rely on a call to SEMPRE to
         evaluate logical forms, and SEMPRE needs to read the table from disk itself.  This tells
         SEMPRE where to find the tables. Passed to super class.
-    initial_mml_model_file : ``str``, optional (default=None)
+    mml_model_file : ``str``, optional (default=None)
         If you want to initialize this model using weights from another model trained using MML,
         pass the path to the ``model.tar.gz`` file of that model here.
     """
@@ -95,11 +92,12 @@ class WikiTablesErmSemanticParser(WikiTablesSemanticParser):
                  action_embedding_dim: int,
                  encoder: Seq2SeqEncoder,
                  entity_encoder: Seq2VecEncoder,
-                 mixture_feedforward: FeedForward,
-                 attention_function: SimilarityFunction,
+                 attention: Attention,
                  decoder_beam_size: int,
                  decoder_num_finished_states: int,
                  max_decoding_steps: int,
+                 mixture_feedforward: FeedForward = None,
+                 add_action_bias: bool = True,
                  normalize_beam_score_by_length: bool = False,
                  checklist_cost_weight: float = 0.6,
                  use_neighbor_similarity_for_linking: bool = False,
@@ -107,7 +105,7 @@ class WikiTablesErmSemanticParser(WikiTablesSemanticParser):
                  num_linking_features: int = 10,
                  rule_namespace: str = 'rule_labels',
                  tables_directory: str = '/wikitables/',
-                 initial_mml_model_file: str = None) -> None:
+                 mml_model_file: str = None) -> None:
         use_similarity = use_neighbor_similarity_for_linking
         super().__init__(vocab=vocab,
                          question_embedder=question_embedder,
@@ -115,6 +113,7 @@ class WikiTablesErmSemanticParser(WikiTablesSemanticParser):
                          encoder=encoder,
                          entity_encoder=entity_encoder,
                          max_decoding_steps=max_decoding_steps,
+                         add_action_bias=add_action_bias,
                          use_neighbor_similarity_for_linking=use_similarity,
                          dropout=dropout,
                          num_linking_features=num_linking_features,
@@ -134,23 +133,23 @@ class WikiTablesErmSemanticParser(WikiTablesSemanticParser):
                 # This is a terminal production.
                 unlinked_terminals_global_indices.append(index)
         self._num_unlinked_terminals = len(unlinked_terminals_global_indices)
-        self._decoder_step = WikiTablesDecoderStep(encoder_output_dim=self._encoder.get_output_dim(),
-                                                   action_embedding_dim=action_embedding_dim,
-                                                   attention_function=attention_function,
-                                                   num_start_types=self._num_start_types,
-                                                   num_entity_types=self._num_entity_types,
-                                                   mixture_feedforward=mixture_feedforward,
-                                                   dropout=dropout,
-                                                   unlinked_terminal_indices=unlinked_terminals_global_indices)
+        self._decoder_step = LinkingCoverageTransitionFunction(encoder_output_dim=self._encoder.get_output_dim(),
+                                                               action_embedding_dim=action_embedding_dim,
+                                                               input_attention=attention,
+                                                               num_start_types=self._num_start_types,
+                                                               predict_start_type_separately=True,
+                                                               add_action_bias=self._add_action_bias,
+                                                               mixture_feedforward=mixture_feedforward,
+                                                               dropout=dropout)
         self._checklist_cost_weight = checklist_cost_weight
         self._agenda_coverage = Average()
         # TODO (pradeep): Checking whether file exists here to avoid raising an error when we've
         # copied a trained ERM model from a different machine and the original MML model that was
         # used to initialize it does not exist on the current machine. This may not be the best
         # solution for the problem.
-        if initial_mml_model_file is not None:
-            if os.path.isfile(initial_mml_model_file):
-                archive = load_archive(initial_mml_model_file)
+        if mml_model_file is not None:
+            if os.path.isfile(mml_model_file):
+                archive = load_archive(mml_model_file)
                 self._initialize_weights_from_archive(archive)
             else:
                 # A model file is passed, but it does not exist. This is expected to happen when
@@ -206,9 +205,10 @@ class WikiTablesErmSemanticParser(WikiTablesSemanticParser):
                 question: Dict[str, torch.LongTensor],
                 table: Dict[str, torch.LongTensor],
                 world: List[WikiTablesWorld],
-                actions: List[List[ProductionRuleArray]],
+                actions: List[List[ProductionRule]],
                 agenda: torch.LongTensor,
-                example_lisp_string: List[str]) -> Dict[str, torch.Tensor]:
+                example_lisp_string: List[str],
+                metadata: List[Dict[str, Any]] = None) -> Dict[str, torch.Tensor]:
         # pylint: disable=arguments-differ
         """
         Parameters
@@ -224,15 +224,17 @@ class WikiTablesErmSemanticParser(WikiTablesSemanticParser):
         world : ``List[WikiTablesWorld]``
             We use a ``MetadataField`` to get the ``World`` for each input instance.  Because of
             how ``MetadataField`` works, this gets passed to us as a ``List[WikiTablesWorld]``,
-        actions : ``List[List[ProductionRuleArray]]``
+        actions : ``List[List[ProductionRule]]``
             A list of all possible actions for each ``World`` in the batch, indexed into a
-            ``ProductionRuleArray`` using a ``ProductionRuleField``.  We will embed all of these
+            ``ProductionRule`` using a ``ProductionRuleField``.  We will embed all of these
             and use the embeddings to determine which action to take at each timestep in the
             decoder.
         example_lisp_string : ``List[str]``
             The example (lisp-formatted) string corresponding to the given input.  This comes
             directly from the ``.examples`` file provided with the dataset.  We pass this to SEMPRE
             when evaluating denotation accuracy; it is otherwise unused.
+        metadata : ``List[Dict[str, Any]]``, optional, (default = None)
+            Metadata containing the original tokenized question within a 'question_tokens' key.
         """
         batch_size = list(question.values())[0].size(0)
         # Each instance's agenda is of size (agenda_size, 1)
@@ -249,62 +251,54 @@ class WikiTablesErmSemanticParser(WikiTablesSemanticParser):
                                                       terminal_productions,
                                                       max_num_terminals)
             checklist_target, terminal_actions, checklist_mask = checklist_info
-            initial_checklist = Variable(checklist_target.data.new(checklist_target.size()).fill_(0))
-            checklist_states.append(ChecklistState(terminal_actions=terminal_actions,
-                                                   checklist_target=checklist_target,
-                                                   checklist_mask=checklist_mask,
-                                                   checklist=initial_checklist))
-        initial_info = self._get_initial_state_and_scores(question=question,
-                                                          table=table,
-                                                          world=world,
-                                                          actions=actions,
-                                                          example_lisp_string=example_lisp_string,
-                                                          add_world_to_initial_state=True,
-                                                          checklist_states=checklist_states)
-        initial_state = initial_info["initial_state"]
-        # TODO(pradeep): Keep track of debug info. It's not straightforward currently because the
-        # ERM's decode does not return the best states.
-        outputs = self._decoder_trainer.decode(initial_state,
-                                               self._decoder_step,
-                                               self._get_state_cost)
+            initial_checklist = checklist_target.new_zeros(checklist_target.size())
+            checklist_states.append(ChecklistStatelet(terminal_actions=terminal_actions,
+                                                      checklist_target=checklist_target,
+                                                      checklist_mask=checklist_mask,
+                                                      checklist=initial_checklist))
+        outputs: Dict[str, Any] = {}
+        rnn_state, grammar_state = self._get_initial_rnn_and_grammar_state(question,
+                                                                           table,
+                                                                           world,
+                                                                           actions,
+                                                                           outputs)
+
+        batch_size = len(rnn_state)
+        initial_score = rnn_state[0].hidden_state.new_zeros(batch_size)
+        initial_score_list = [initial_score[i] for i in range(batch_size)]
+        initial_state = CoverageState(batch_indices=list(range(batch_size)),  # type: ignore
+                                      action_history=[[] for _ in range(batch_size)],
+                                      score=initial_score_list,
+                                      rnn_state=rnn_state,
+                                      grammar_state=grammar_state,
+                                      checklist_state=checklist_states,
+                                      possible_actions=actions,
+                                      extras=example_lisp_string,
+                                      debug_info=None)
+
         if not self.training:
-            # TODO(pradeep): Can move most of this block to super class.
-            linking_scores = initial_info["linking_scores"]
-            feature_scores = initial_info["feature_scores"]
-            similarity_scores = initial_info["similarity_scores"]
-            batch_size = list(question.values())[0].size(0)
+            initial_state.debug_info = [[] for _ in range(batch_size)]
+
+        outputs = self._decoder_trainer.decode(initial_state,  # type: ignore
+                                               self._decoder_step,
+                                               partial(self._get_state_cost, world))
+        best_final_states = outputs['best_final_states']
+
+        if not self.training:
+            batch_size = len(actions)
+            agenda_indices = [actions_[:, 0].cpu().data for actions_ in agenda]
             action_mapping = {}
             for batch_index, batch_actions in enumerate(actions):
                 for action_index, action in enumerate(batch_actions):
                     action_mapping[(batch_index, action_index)] = action[0]
-            outputs['action_mapping'] = action_mapping
-            outputs['entities'] = []
-            outputs['linking_scores'] = linking_scores
-            if feature_scores is not None:
-                outputs['feature_scores'] = feature_scores
-            outputs['similarity_scores'] = similarity_scores
-            outputs['logical_form'] = []
-            best_action_sequences = outputs['best_action_sequences']
-            agenda_indices = [actions_[:, 0].cpu().data for actions_ in agenda]
             for i in range(batch_size):
                 in_agenda_ratio = 0.0
                 # Decoding may not have terminated with any completed logical forms, if `num_steps`
                 # isn't long enough (or if the model is not trained enough and gets into an
                 # infinite action loop).
-                if i in best_action_sequences:
-                    # Taking only the top action sequence.
-                    best_action_sequence = best_action_sequences[i][0]
-                    action_strings = [action_mapping[(i, action_index)] for action_index in best_action_sequence]
-                    try:
-                        self._has_logical_form(1.0)
-                        logical_form = world[i].get_logical_form(action_strings, add_var_function=False)
-                    except ParsingError:
-                        self._has_logical_form(0.0)
-                        logical_form = 'Error producing logical form'
-                    if example_lisp_string:
-                        self._denotation_accuracy(logical_form, example_lisp_string[i])
-                    outputs['logical_form'].append(logical_form)
-                    outputs['entities'].append(world[i].table_graph.entities)
+                if i in best_final_states:
+                    action_sequence = best_final_states[i][0].action_history[0]
+                    action_strings = [action_mapping[(i, action_index)] for action_index in action_sequence]
                     instance_possible_actions = actions[i]
                     agenda_actions = []
                     for rule_id in agenda_indices[i]:
@@ -318,17 +312,19 @@ class WikiTablesErmSemanticParser(WikiTablesSemanticParser):
                         # Note: This means that when there are no actions on agenda, agenda coverage
                         # will be 0, not 1.
                         in_agenda_ratio = sum(actions_in_agenda) / len(actions_in_agenda)
-                else:
-                    outputs['logical_form'].append('')
-                    self._has_logical_form(0.0)
-                    if example_lisp_string:
-                        self._denotation_accuracy(None, example_lisp_string[i])
                 self._agenda_coverage(in_agenda_ratio)
+
+            self._compute_validation_outputs(actions,
+                                             best_final_states,
+                                             world,
+                                             example_lisp_string,
+                                             metadata,
+                                             outputs)
         return outputs
 
     @staticmethod
     def _get_checklist_info(agenda: torch.LongTensor,
-                            all_actions: List[ProductionRuleArray],
+                            all_actions: List[ProductionRule],
                             terminal_productions: Set[str],
                             max_num_terminals: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -342,7 +338,7 @@ class WikiTablesErmSemanticParser(WikiTablesSemanticParser):
         ----------
         ``agenda`` : ``torch.LongTensor``
             Agenda of one instance of size ``(agenda_size, 1)``.
-        ``all_actions`` : ``List[ProductionRuleArray]``
+        ``all_actions`` : ``List[ProductionRule]``
             All actions for one instance.
         ``terminal_productions`` : ``Set[str]``
             String representations of terminal productions in the corresponding world.
@@ -352,11 +348,11 @@ class WikiTablesErmSemanticParser(WikiTablesSemanticParser):
         """
         terminal_indices = []
         target_checklist_list = []
-        agenda_indices_set = set([int(x) for x in agenda.squeeze(0).data.cpu().numpy()])
+        agenda_indices_set = set([int(x) for x in agenda.squeeze(0).detach().cpu().numpy()])
         # We want to return checklist target and terminal actions that are column vectors to make
         # computing softmax over the difference between checklist and target easier.
         for index, action in enumerate(all_actions):
-            # Each action is a ProductionRuleArray, a tuple where the first item is the production
+            # Each action is a ProductionRule, a tuple where the first item is the production
             # rule string.
             if action[0] in terminal_productions:
                 terminal_indices.append([index])
@@ -368,15 +364,16 @@ class WikiTablesErmSemanticParser(WikiTablesSemanticParser):
             target_checklist_list.append([0])
             terminal_indices.append([-1])
         # (max_num_terminals, 1)
-        terminal_actions = Variable(agenda.data.new(terminal_indices))
+        terminal_actions = agenda.new_tensor(terminal_indices)
         # (max_num_terminals, 1)
-        target_checklist = Variable(agenda.data.new(target_checklist_list)).float()
+        target_checklist = agenda.new_tensor(target_checklist_list, dtype=torch.float)
         checklist_mask = (target_checklist != 0).float()
         return target_checklist, terminal_actions, checklist_mask
 
-    def _get_state_cost(self, state: WikiTablesDecoderState) -> torch.Tensor:
+    def _get_state_cost(self, worlds: List[WikiTablesWorld], state: CoverageState) -> torch.Tensor:
         if not state.is_finished():
             raise RuntimeError("_get_state_cost() is not defined for unfinished states!")
+        world = worlds[state.batch_indices[0]]
 
         # Our checklist cost is a sum of squared error from where we want to be, making sure we
         # take into account the mask. We clamp the lower limit of the balance at 0 to avoid
@@ -391,9 +388,9 @@ class WikiTablesErmSemanticParser(WikiTablesSemanticParser):
         action_history = state.action_history[0]
         batch_index = state.batch_indices[0]
         action_strings = [state.possible_actions[batch_index][i][0] for i in action_history]
-        logical_form = state.world[batch_index].get_logical_form(action_strings)
-        lisp_string = state.example_lisp_string[batch_index]
-        if self._denotation_accuracy.evaluate_logical_form(logical_form, lisp_string):
+        logical_form = world.get_logical_form(action_strings)
+        lisp_string = state.extras[batch_index]
+        if self._executor.evaluate_logical_form(logical_form, lisp_string):
             cost = checklist_cost
         else:
             cost = checklist_cost + (1 - self._checklist_cost_weight) * denotation_cost
@@ -408,52 +405,3 @@ class WikiTablesErmSemanticParser(WikiTablesSemanticParser):
         metrics = super().get_metrics(reset)
         metrics["agenda_coverage"] = self._agenda_coverage.get_metric(reset)
         return metrics
-
-    @classmethod
-    def from_params(cls, vocab, params: Params) -> 'WikiTablesErmSemanticParser':
-        question_embedder = TextFieldEmbedder.from_params(vocab, params.pop("question_embedder"))
-        action_embedding_dim = params.pop_int("action_embedding_dim")
-        encoder = Seq2SeqEncoder.from_params(params.pop("encoder"))
-        entity_encoder = Seq2VecEncoder.from_params(params.pop('entity_encoder'))
-        mixture_feedforward_type = params.pop('mixture_feedforward', None)
-        if mixture_feedforward_type is not None:
-            mixture_feedforward = FeedForward.from_params(mixture_feedforward_type)
-        else:
-            mixture_feedforward = None
-        # If no attention function is specified, we should not use attention, not attention with
-        # default similarity function.
-        attention_function_type = params.pop("attention_function", None)
-        if attention_function_type is not None:
-            attention_function = SimilarityFunction.from_params(attention_function_type)
-        else:
-            attention_function = None
-        decoder_beam_size = params.pop_int("decoder_beam_size")
-        decoder_num_finished_states = params.pop_int("decoder_num_finished_states", None)
-        max_decoding_steps = params.pop_int("max_decoding_steps")
-        normalize_beam_score_by_length = params.pop("normalize_beam_score_by_length", False)
-        use_neighbor_similarity_for_linking = params.pop_bool("use_neighbor_similarity_for_linking", False)
-        dropout = params.pop_float('dropout', 0.0)
-        num_linking_features = params.pop_int('num_linking_features', 10)
-        tables_directory = params.pop('tables_directory', '/wikitables/')
-        rule_namespace = params.pop('rule_namespace', 'rule_labels')
-        checklist_cost_weight = params.pop_float("checklist_cost_weight", 0.6)
-        mml_model_file = params.pop('mml_model_file', None)
-        params.assert_empty(cls.__name__)
-        return cls(vocab,
-                   question_embedder=question_embedder,
-                   action_embedding_dim=action_embedding_dim,
-                   encoder=encoder,
-                   entity_encoder=entity_encoder,
-                   mixture_feedforward=mixture_feedforward,
-                   attention_function=attention_function,
-                   decoder_beam_size=decoder_beam_size,
-                   decoder_num_finished_states=decoder_num_finished_states,
-                   max_decoding_steps=max_decoding_steps,
-                   normalize_beam_score_by_length=normalize_beam_score_by_length,
-                   checklist_cost_weight=checklist_cost_weight,
-                   use_neighbor_similarity_for_linking=use_neighbor_similarity_for_linking,
-                   dropout=dropout,
-                   num_linking_features=num_linking_features,
-                   tables_directory=tables_directory,
-                   rule_namespace=rule_namespace,
-                   initial_mml_model_file=mml_model_file)

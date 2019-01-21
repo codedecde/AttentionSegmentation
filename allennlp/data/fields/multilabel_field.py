@@ -3,7 +3,6 @@ import logging
 
 from overrides import overrides
 import torch
-from torch.autograd import Variable
 
 from allennlp.data.fields.field import Field
 from allennlp.data.vocabulary import Vocabulary
@@ -107,22 +106,14 @@ class MultiLabelField(Field[torch.Tensor]):
         return {}
 
     @overrides
-    def as_tensor(self,
-                  padding_lengths: Dict[str, int],
-                  cuda_device: int = -1,
-                  for_training: bool = True) -> torch.Tensor:
+    def as_tensor(self, padding_lengths: Dict[str, int]) -> torch.Tensor:
         # pylint: disable=unused-argument
 
-        values = torch.zeros(self._num_labels)  # vector of zeros
+        tensor = torch.zeros(self._num_labels, dtype=torch.long)  # vector of zeros
         if self._label_ids:
-            values.scatter_(0, torch.LongTensor(self._label_ids), 1)
-        tensor = None
-        if for_training:
-            tensor = Variable(values)
-        else:
-            with torch.no_grad():
-                tensor = Variable(values)
-        return tensor if cuda_device == -1 else tensor.cuda(cuda_device)
+            tensor.scatter_(0, torch.LongTensor(self._label_ids), 1)
+
+        return tensor
 
     @overrides
     def empty_field(self):

@@ -4,7 +4,6 @@ from typing import Any, Dict, List, Optional, Tuple, DefaultDict, Set
 
 from overrides import overrides
 
-from allennlp.common import Params
 from allennlp.common.file_utils import cached_path
 from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 from allennlp.data.fields import Field, ListField, TextField, SpanField, MetadataField, SequenceLabelField
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 def canonicalize_clusters(clusters: DefaultDict[int, List[Tuple[int, int]]]) -> List[List[Tuple[int, int]]]:
     """
-    The CONLL 2012 data includes 2 annotatated spans which are identical,
+    The CONLL 2012 data includes 2 annotated spans which are identical,
     but have different ids. This checks all clusters for spans which are
     identical, and if it finds any, merges the clusters containing the
     identical spans.
@@ -175,14 +174,6 @@ class ConllCorefReader(DatasetReader):
             fields["span_labels"] = SequenceLabelField(span_labels, span_field)
 
         return Instance(fields)
-
-    @classmethod
-    def from_params(cls, params: Params) -> "ConllCorefReader":
-        token_indexers = TokenIndexer.dict_from_params(params.pop("token_indexers", {}))
-        max_span_width = params.pop_int("max_span_width")
-        lazy = params.pop('lazy', False)
-        params.assert_empty(cls.__name__)
-        return cls(token_indexers=token_indexers, max_span_width=max_span_width, lazy=lazy)
 
     @staticmethod
     def _normalize_word(word):

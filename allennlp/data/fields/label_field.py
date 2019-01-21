@@ -3,7 +3,6 @@ import logging
 
 from overrides import overrides
 import torch
-from torch.autograd import Variable
 
 from allennlp.data.fields.field import Field
 from allennlp.data.vocabulary import Vocabulary
@@ -81,26 +80,17 @@ class LabelField(Field[torch.Tensor]):
     @overrides
     def index(self, vocab: Vocabulary):
         if self._label_id is None:
-            self._label_id = vocab.get_token_index(
-                self.label, self._label_namespace)  # type: ignore
+            self._label_id = vocab.get_token_index(self.label, self._label_namespace)  # type: ignore
 
     @overrides
     def get_padding_lengths(self) -> Dict[str, int]:  # pylint: disable=no-self-use
         return {}
 
     @overrides
-    def as_tensor(self,
-                  padding_lengths: Dict[str, int],
-                  cuda_device: int = -1,
-                  for_training: bool = True) -> torch.Tensor:
-        # pylint: disable=unused-argument
-        tensor = None
-        if for_training:
-            tensor = Variable(torch.LongTensor([self._label_id]))
-        else:
-            with torch.no_grad():
-                tensor = Variable(torch.LongTensor([self._label_id]))
-        return tensor if cuda_device == -1 else tensor.cuda(cuda_device)
+    def as_tensor(self, padding_lengths: Dict[str, int]) -> torch.Tensor:
+        # pylint: disable=unused-argument,not-callable
+        tensor = torch.tensor(self._label_id, dtype=torch.long)
+        return tensor
 
     @overrides
     def empty_field(self):
