@@ -121,7 +121,8 @@ class Trainer(common_trainer.Trainer):
             self._visualizer.visualize_data(
                 instances=data,
                 model=self._model,
-                filename=filename
+                filename=filename,
+                cuda_device=self._iterator_device
             )
 
     # @overrides

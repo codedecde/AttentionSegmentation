@@ -166,10 +166,7 @@ def main():
     logger.info("Training Done.")
     if instances_test is not None:
         logger.info("Computing final Test Accuracy")
-        try:
-            trainer.test(instances_test)
-        except Exception as e:
-            pdb.set_trace()
+        trainer.test(instances_test)
     logger.info("Done.")
 
 
