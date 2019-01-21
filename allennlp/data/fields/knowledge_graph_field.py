@@ -223,7 +223,12 @@ class KnowledgeGraphField(Field[Dict[str, torch.Tensor]]):
                                                           desired_num_entity_tokens,
                                                           padding_lengths)
                 padded_arrays.append(padded_array)
-            tensor = Variable(torch.LongTensor(padded_arrays), volatile=not for_training)
+            tensor = None
+            if for_training:
+                tensor = Variable(torch.LongTensor(padded_arrays))
+            else:
+                with torch.no_grad():
+                    tensor = Variable(torch.LongTensor(padded_arrays))
             tensors[indexer_name] = tensor if cuda_device == -1 else tensor.cuda(cuda_device)
         padded_linking_features = util.pad_sequence_to_length(self.linking_features,
                                                               desired_num_entities,
@@ -231,12 +236,20 @@ class KnowledgeGraphField(Field[Dict[str, torch.Tensor]]):
         padded_linking_arrays = []
         default_feature_value = lambda: [0.0] * len(self._feature_extractors)
         for linking_features in padded_linking_features:
-            padded_features = util.pad_sequence_to_length(linking_features,
-                                                          desired_num_utterance_tokens,
-                                                          default_value=default_feature_value)
+            padded_features = util.pad_sequence_to_length(
+                linking_features,
+                desired_num_utterance_tokens,
+                default_value=default_feature_value
+            )
             padded_linking_arrays.append(padded_features)
-        linking_features_tensor = Variable(torch.FloatTensor(padded_linking_arrays),
-                                           volatile=not for_training)
+        linking_features_tensor = None
+        if for_training:
+            linking_features_tensor = Variable(
+                torch.FloatTensor(padded_linking_arrays))
+        else:
+            with torch.no_grad():
+                linking_features_tensor = Variable(
+                    torch.FloatTensor(padded_linking_arrays))
         if cuda_device != -1:
             linking_features_tensor = linking_features_tensor.cuda(cuda_device)
         return {'text': tensors, 'linking': linking_features_tensor}

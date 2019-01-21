@@ -46,7 +46,12 @@ class IndexField(Field[torch.Tensor]):
                   cuda_device: int = -1,
                   for_training: bool = True) -> torch.Tensor:
         # pylint: disable=unused-argument
-        tensor = Variable(torch.LongTensor([self.sequence_index]), volatile=not for_training)
+        tensor = None
+        if for_training:
+            tensor = Variable(torch.LongTensor([self.sequence_index]))
+        else:
+            with torch.no_grad():
+                tensor = Variable(torch.LongTensor([self.sequence_index]))
         return tensor if cuda_device == -1 else tensor.cuda(cuda_device)
 
     @overrides

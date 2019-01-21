@@ -87,6 +87,8 @@ def setup_output_dir(config, loglevel):
     make_directory(best_model_dirname)
     vocab_dirname = os.path.join(new_dirname, 'vocab')
     make_directory(vocab_dirname)
+    visualize_dirname = os.path.join(new_dirname, 'visualization')
+    make_directory(visualize_dirname)
     config_file = os.path.join(new_dirname, 'config.json')
     write_config_to_file(config_file, config)
 

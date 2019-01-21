@@ -81,7 +81,8 @@ class LabelField(Field[torch.Tensor]):
     @overrides
     def index(self, vocab: Vocabulary):
         if self._label_id is None:
-            self._label_id = vocab.get_token_index(self.label, self._label_namespace)  # type: ignore
+            self._label_id = vocab.get_token_index(
+                self.label, self._label_namespace)  # type: ignore
 
     @overrides
     def get_padding_lengths(self) -> Dict[str, int]:  # pylint: disable=no-self-use
@@ -93,7 +94,12 @@ class LabelField(Field[torch.Tensor]):
                   cuda_device: int = -1,
                   for_training: bool = True) -> torch.Tensor:
         # pylint: disable=unused-argument
-        tensor = Variable(torch.LongTensor([self._label_id]), volatile=not for_training)
+        tensor = None
+        if for_training:
+            tensor = Variable(torch.LongTensor([self._label_id]))
+        else:
+            with torch.no_grad():
+                tensor = Variable(torch.LongTensor([self._label_id]))
         return tensor if cuda_device == -1 else tensor.cuda(cuda_device)
 
     @overrides

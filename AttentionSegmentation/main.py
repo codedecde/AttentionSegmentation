@@ -17,8 +17,12 @@ import AttentionSegmentation.reader as Readers
 from AttentionSegmentation.trainer import Trainer
 import AttentionSegmentation.model.classifiers as Models
 
-from AttentionSegmentation.commons.utils import setup_output_dir, read_from_config_file
-from AttentionSegmentation.commons.model_utils import construct_vocab, load_model_from_existing
+from AttentionSegmentation.commons.utils import \
+    setup_output_dir, read_from_config_file
+from AttentionSegmentation.commons.model_utils import \
+    construct_vocab, load_model_from_existing
+from AttentionSegmentation.visualization.visualize_attns import \
+    html_visualizer
 
 
 def get_arguments():
@@ -66,7 +70,7 @@ def main():
     assert reader_type is not None and hasattr(Readers, reader_type),\
         f"Cannot find reader {reader_type}"
     reader = getattr(Readers, reader_type).from_params(dataset_reader_params)
-    instances_train = reader.read(file_path=TRAIN_PATH)
+    instances_train = reader.read(file_path=TRAIN_PATH)    
     logger.info("Length of {0}: {1}".format(
         "Training Data", len(instances_train)))
 
@@ -98,7 +102,7 @@ def main():
     vocab_dir = os.path.join(serial_dir, "vocab")
     assert os.path.exists(vocab_dir), "Couldn't find the vocab directory"
     vocab.save_to_files(vocab_dir)
-    
+
     # if load_config is not None:
     #     # modify the vocab from the source model vocab
     #     src_vocab_path = load_config.pop("vocab_path", None)
@@ -116,6 +120,11 @@ def main():
     logger.info("Constructing Data Iterators")
     data_iterator = DataIterator.from_params(config.pop("iterator"))
     data_iterator.index_with(vocab)
+
+    visualize = config.pop("visualize", False)
+    visualizer = None
+    if visualize:
+        visualizer = html_visualizer(vocab, reader)
 
     logger.info("Data Iterators Done")
 
@@ -150,6 +159,7 @@ def main():
         iterator=data_iterator,
         train_data=instances_train,
         validation_data=instances_val,
+        visualizer=visualizer,
         params=config.pop("trainer")
     )
     trainer.train()

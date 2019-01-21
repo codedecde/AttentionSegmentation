@@ -5,7 +5,138 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sn
 
+from allennlp.data.iterators import BasicIterator
+from allennlp.data.instance import Instance
+from allennlp.models.model import Model
+from allennlp.common.tqdm import Tqdm
+
+
 from AttentionSegmentation.model.metrics import ConfusionMatrix
+
+
+def colorized_predictions_to_webpage(
+        predictions, vis_page="visualize.html"):
+    """This generates the visualization web page from predictions
+
+    Arguments:
+        predictions (List[Dict[str, Any]]): A list of predictions.
+            Each prediction contains:
+                * text (List[str]): list of tokens
+                * pred (str): The predicted token
+                * gold (str): The gold token
+                * attn (List[float]): The list of float tokens
+        vis_page (str): The final output page
+
+    """
+    with open(vis_page, "w") as f:
+        header = (
+            '<html>\n'
+            '<head>\n'
+            '<style>\n'  # The CSS element
+            '   correct { color: #8dde28; padding-right: 5px; padding-left: 5px }\n'
+            '   incorrect { color: #e93f3f; padding-right: 5px; padding-left: 5px }\n'
+            '   body { color: color:#000000}\n'
+            '</style>\n'
+            '<\head>\n'
+            '<body>'
+        )
+        f.write(header)
+        for pred in predictions:
+            txt = " ".join(pred["text"])
+            attn_weights = pred["attn"]
+            pred_label = pred["pred"]
+            gold_label = pred["gold"]
+            html = colorize_text(txt, attn_weights)
+            if pred_label == gold_label:
+                pred_gold = (
+                    '<correct>'
+                    f' {pred_label} '
+                    f' {gold_label} '
+                    '</correct>'
+                )
+            else:
+                pred_gold = (
+                    '<incorrect>'
+                    f' {pred_label} '
+                    f' {gold_label} '
+                    '</incorrect>'
+                )
+            f.write(f"{html}{pred_gold}<br>")
+        footer = "</body></html>"
+        f.write(footer)
+
+
+class html_visualizer(object):
+    """This collects the different visualization methods for easy visualization
+    """
+
+    def __init__(self, vocab, reader):
+        self._vocab = vocab
+        self._iterator = BasicIterator(batch_size=32)
+        self._iterator.index_with(self._vocab)
+        self._reader = reader
+
+    def _get_text_from_instance(self, instance: Instance) -> List[str]:
+        """Helper function to extract text from an instance
+        """
+        return list(map(lambda x: x.text, instance.fields['tokens'].tokens))
+
+    def visualize_data(
+        self,
+        instances: List[Instance],
+        model: Model,
+        filename: str,
+        cuda_device: int = -1
+    ):
+        """This function helps visualize the attention maps
+        We use a basic itereator, since a bucket iterator shuffles
+        data, even for shuffle=False
+
+        Arguments:
+            data (List[Instance]) : The list of instances for inference
+            filename (str) : The html file to output to
+            cuda_device (int) : The GPU being used
+        """
+        iterator = self._iterator(
+            instances,
+            num_epochs=1,
+            shuffle=False,
+            cuda_device=cuda_device,
+            for_training=False
+        )
+        model.eval()
+        num_batches = self._iterator.get_num_batches(instances)
+        inference_generator_tqdm = Tqdm.tqdm(iterator, total=num_batches)
+        predictions = []
+        index = 0
+        index_labeler = self._reader.get_label_indexer()
+        correct_counts = 0.
+        for batch in inference_generator_tqdm:
+            # Currently I don't support multi-gpu data parallel
+            output_dict = model.decode(model(**batch))
+            for ix in range(len(output_dict["preds"])):
+                text = self._get_text_from_instance(instances[index])
+                label_num = instances[index].fields['labels'].labels[0]
+                # FIXME: Currently supporting binary classification
+                assert len(instances[index].fields['labels'].labels) == 1
+                index += 1
+                pred = output_dict["preds"][ix]
+                attn = output_dict["attentions"][ix]
+                gold = "O"
+                if label_num < len(index_labeler.ix2tags):
+                    gold = index_labeler.ix2tags[label_num]
+                if pred == gold:
+                    correct_counts += 1.
+                prediction = {
+                    "text": text,
+                    "pred": pred,
+                    "attn": attn,
+                    "gold": gold
+                }
+                predictions.append(prediction)
+        if filename != "":
+            colorized_predictions_to_webpage(
+                predictions, vis_page=filename)
 
 
 def plot_data_point(data_point, mode="hierarchical", **kwargs):
@@ -165,58 +296,6 @@ def colorized_list_to_webpage(
         for txt, attn_weights in zip(lst_txt, lst_attn_weights):
             html = get_colorized_text_as_html(txt, attn_weights)
             f.write(f"{html}<br>")
-
-
-def colorized_predictions_to_webpage(
-        predictions, vis_page="visualize.html"):
-    """This generates the visualization web page from predictions
-
-    Arguments:
-        predictions (List[Dict[str, Any]]): A list of predictions.
-            Each prediction contains:
-                * text (List[str]): list of tokens
-                * pred (str): The predicted token
-                * gold (str): The gold token
-                * attn (List[float]): The list of float tokens
-        vis_page (str): The final output page
-
-    """
-    with open(vis_page, "w") as f:
-        header = (
-            '<html>\n'
-            '<head>\n'
-            '<style>\n'  # The CSS element
-            '   correct { color: #8dde28; padding-right: 5px; padding-left: 5px }\n'
-            '   incorrect { color: #e93f3f; padding-right: 5px; padding-left: 5px }\n'
-            '   body { color: color:#000000}\n'
-            '</style>\n'
-            '<\head>\n'
-            '<body>'
-        )
-        f.write(header)
-        for pred in predictions:
-            txt = " ".join(pred["text"])
-            attn_weights = pred["attn"]
-            pred_label = pred["pred"]
-            gold_label = pred["gold"]
-            html = colorize_text(txt, attn_weights)
-            if pred_label == gold_label:
-                pred_gold = (
-                    '<correct>'
-                    f' {pred_label} '
-                    f' {gold_label} '
-                    '</correct>'
-                )
-            else:
-                pred_gold = (
-                    '<incorrect>'
-                    f' {pred_label} '
-                    f' {gold_label} '
-                    '</incorrect>'
-                )
-            f.write(f"{html}{pred_gold}<br>")
-        footer = "</body></html>"
-        f.write(footer)
 
 
 if __name__ == "__main__":

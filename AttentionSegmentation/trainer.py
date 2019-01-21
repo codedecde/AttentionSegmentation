@@ -36,7 +36,7 @@ class Trainer(common_trainer.Trainer):
         else:
             self._tf_logger = None
             self._tf_params = None
-        super(Trainer, self).__init__(*args, **kwargs)
+        super(Trainer, self).__init__(base_dir=base_dir, *args, **kwargs)
         self._reset_counter()
 
     def _init_tensorboard(
@@ -114,6 +114,15 @@ class Trainer(common_trainer.Trainer):
         # writebuf = "########## TESTING ##########"
         # writebuf = self._prettyprint(metrics, writebuf)
         logger.info(writebuf)
+        if self._visualizer is not None:
+            filename = os.path.join(
+                self._visualization_dirname, "test.html")
+            logger.info(f"Writing test visualization at {filename}")
+            self._visualizer.visualize_data(
+                instances=data,
+                model=self._model,
+                filename=filename
+            )
 
     # @overrides
     # def _get_validation_metric(self, val_metrics):
@@ -177,8 +186,8 @@ class Trainer(common_trainer.Trainer):
 
         if not for_training:
             thresh = np.log(0.5)
-            # num_zero_preds = (output_dict['log_probs'].gt(thresh).long() == 0).sum().data.cpu().numpy()[0]
-            num_zero_preds = (output_dict['log_probs'].gt(thresh).long() == 0).sum().item()
+            num_zero_preds = (
+                output_dict['log_probs'].gt(thresh).long() == 0).sum().item()
             self._zero_counts["zero"] += num_zero_preds
             self._zero_counts["num_preds"] += output_dict['log_probs'].numel()
         try:
@@ -242,9 +251,11 @@ class Trainer(common_trainer.Trainer):
                 inference_loss += loss.data.cpu().numpy()
 
             # Update the description with the latest metrics
-            inference_metrics = self._get_metrics(inference_loss, batches_this_epoch)
+            inference_metrics = self._get_metrics(
+                inference_loss, batches_this_epoch)
             description = self._description_from_metrics(inference_metrics)
-            inference_generator_tqdm.set_description(description, refresh=False)
+            inference_generator_tqdm.set_description(
+                description, refresh=False)
         num_zero_preds = self._zero_counts["zero"]
         num_preds = self._zero_counts["num_preds"]
         logger.info("{0} done. ({1} / {2}) zero predicted".format(
@@ -254,14 +265,14 @@ class Trainer(common_trainer.Trainer):
 
     @classmethod
     @overrides
-    def from_params(cls, base_dir, *args, **kwargs) -> 'Trainer':
-        model_serialization_dir = os.path.join(base_dir, "models")
-        assert os.path.exists(model_serialization_dir), \
-            "Cannot find the serialization directory at" \
-            f" {model_serialization_dir}"
-        kwargs["serialization_dir"] = model_serialization_dir
+    def from_params(cls, *args, **kwargs) -> 'Trainer':
+        # model_serialization_dir = os.path.join(base_dir, "models")
+        # assert os.path.exists(model_serialization_dir), \
+        #     "Cannot find the serialization directory at" \
+        #     f" {model_serialization_dir}"
+        # kwargs["serialization_dir"] = model_serialization_dir
         tensorboard = None
         if "tensorboard" in kwargs["params"]:
             tensorboard = kwargs["params"].pop("tensorboard")
         new_args = cls.get_args(*args, **kwargs)
-        return Trainer(base_dir=base_dir, tensorboard=tensorboard, **new_args)
+        return Trainer(tensorboard=tensorboard, **new_args)

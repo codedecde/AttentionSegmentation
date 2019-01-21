@@ -40,7 +40,12 @@ class ArrayField(Field[numpy.ndarray]):
             slicing_shape = slicing_shape + [0 for _ in range(len(max_shape) - len(self.array.shape))]
         slices = [slice(0, x) for x in slicing_shape]
         return_array[slices] = self.array
-        tensor = Variable(torch.from_numpy(return_array), volatile=not for_training)
+        tensor = None
+        if for_training:
+            tensor = Variable(torch.from_numpy(return_array))
+        else:
+            with torch.no_grad():
+                tensor = Variable(torch.from_numpy(return_array))
         return tensor if cuda_device == -1 else tensor.cuda(cuda_device)
 
     @overrides

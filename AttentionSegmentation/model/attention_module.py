@@ -103,7 +103,7 @@ class KeyedAttention(BaseAttention):
         elif self.attn_type == "sum":
             batch, seq_len, key_dim = proj_ctxt.size()
             expanded_key = self.key.transpose(0, 1).expand(batch, seq_len, -1)
-            ctxt_key_matrix = F.tanh(expanded_key + proj_ctxt)
+            ctxt_key_matrix = torch.tanh(expanded_key + proj_ctxt)
             logits = self.proj_ctxt_key_matrix(ctxt_key_matrix).squeeze(-1)
         if mask is not None:
             float_mask = mask.float()
@@ -128,7 +128,6 @@ class KeyedAttention(BaseAttention):
             ctxt_dim=ctxt_emb_size,
             attn_type=attn_type,
             dropout=dropout)
-
 
 
 class DotAttention(BaseAttention):

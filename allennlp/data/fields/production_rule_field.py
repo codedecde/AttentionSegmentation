@@ -93,7 +93,12 @@ class ProductionRuleField(Field[ProductionRuleArray]):  # type: ignore
                   for_training: bool = True) -> ProductionRuleArray:
         # pylint: disable=unused-argument
         if self.is_global_rule:
-            tensor = Variable(torch.LongTensor([self._rule_id]), volatile=not for_training)
+            tensor = None
+            if for_training:
+                tensor = Variable(torch.LongTensor([self._rule_id]))
+            else:
+                with torch.no_grad():
+                    tensor = Variable(torch.LongTensor([self._rule_id]))
         else:
             tensor = None
         return (self.rule, self.is_global_rule, tensor)

@@ -31,6 +31,8 @@ from allennlp.training.optimizers import Optimizer
 
 from AttentionSegmentation.commons.trainer_utils import is_sparse,\
     sparse_clip_norm, move_optimizer_to_cuda, TensorboardWriter
+from AttentionSegmentation.visualization.visualize_attns \
+    import html_visualizer
 logger = logging.getLogger(__name__)
 
 TQDM_COLUMNS = 200
@@ -43,10 +45,11 @@ class Trainer(object):
                  iterator: DataIterator,
                  train_dataset: Iterable[Instance],
                  validation_dataset: Optional[Iterable[Instance]] = None,
+                 visualizer: Optional[html_visualizer] = None,
                  patience: Optional[int] = None,
                  validation_metric: str = "-loss",
                  num_epochs: int = 20,
-                 serialization_dir: Optional[str] = None,
+                 base_dir: Optional[str] = None,
                  num_serialized_models_to_keep: Optional[int] = None,
                  cuda_device: Union[int, List] = -1,
                  grad_norm: Optional[float] = None,
@@ -69,6 +72,8 @@ class Trainer(object):
             A ``Dataset`` to train on. The dataset should have already been indexed.
         validation_dataset : ``Dataset``, optional, (default = None).
             A ``Dataset`` to evaluate on. The dataset should have already been indexed.
+        visualizer : ``html_visualizer`` for visualization of attention. None
+            if we don't want to visualize
         patience : Optional[int] > 0, optional (default=None)
             Number of epochs to be patient before early stopping: the training is stopped
             after ``patience`` epochs with no improvement. If given, it must be ``> 0``.
@@ -81,9 +86,9 @@ class Trainer(object):
             Allowed values are -loss, +precision-overall, +recall-overall, +f1-measure-overall
         num_epochs : int, optional (default = 20)
             Number of training epochs.
-        serialization_dir : str, optional (default=None)
-            Path to directory for saving and loading model files. Models will not be saved if
-            this parameter is not passed.
+        base_dir : str, optional (default=None)
+            Path to directory for the experiment. Models will be saved at 
+            {base_dir}/models, and won't be saved if this parameter is not passed.
         num_serialized_models_to_keep: int, optional (default=None)
             The number of models to keep during training
         cuda_device : ``int``, optional (default = -1)
@@ -101,12 +106,20 @@ class Trainer(object):
             provided to determine if learning has plateaued.  To support updating the learning
             rate on every batch, this can optionally implement ``step_batch(batch_num_total)`` which
             updates the learning rate given the batch number.
+        visualization_dirname : The directory to save the visualization in
+
         """
         self._model = model
         self._iterator = iterator
         self._optimizer = optimizer
         self._train_data = train_dataset
         self._validation_data = validation_dataset
+        self._visualizer = visualizer
+        self._base_dir = base_dir
+        self._visualization_dirname = None
+        if self._visualizer is not None:
+            self._visualization_dirname = os.path.join(
+                base_dir, "visualization")
 
         if patience is None:  # no early stopping
             if validation_dataset:
@@ -118,6 +131,9 @@ class Trainer(object):
         self._patience = patience
         self._num_epochs = num_epochs
 
+        serialization_dir = None
+        if base_dir is not None:
+            serialization_dir = os.path.join(base_dir, "models")
         self._serialization_dir = serialization_dir
         assert os.path.exists(self._serialization_dir), "Directory {0} does not exist".format(self._serialization_dir)
 
@@ -365,6 +381,7 @@ class Trainer(object):
             logger.info(message_template, "Test", name, test_metric)
         return metrics
 
+
     def _inference_loss(self, data,
                         logger_string="validation") -> Tuple[float, int]:
         """
@@ -474,6 +491,17 @@ class Trainer(object):
             self._save_checkpoint(
                 epoch, validation_metric_per_epoch, is_best=is_best_so_far)
             self._metrics_to_console(train_metrics, val_metrics)
+            # Now the visualization integration
+            if self._visualizer is not None and is_best_so_far:
+                filename = os.path.join(
+                    self._visualization_dirname, "validation.html")
+                logger.info(f"Writing validation visualization at {filename}")
+                self._visualizer.visualize_data(
+                    instances=self._validation_data,
+                    model=self._model,
+                    filename=filename,
+                    cuda_device=self._iterator_device
+                )
 
             if self._learning_rate_scheduler:
                 # The LRScheduler API is agnostic to whether your schedule requires a validation metric -
@@ -685,10 +713,11 @@ class Trainer(object):
     @classmethod
     def get_args(cls,
                  model: Model,
-                 serialization_dir: str,
+                 base_dir: str,
                  iterator: DataIterator,
                  train_data: Iterable[Instance],
                  validation_data: Optional[Iterable[Instance]],
+                 visualizer: Optional[html_visualizer],
                  params: Params) -> Dict[str, Any]:
         patience = params.pop_int("patience", None)
         validation_metric = params.pop("validation_metric", "-loss")
@@ -718,10 +747,11 @@ class Trainer(object):
         kwargs['iterator'] = iterator
         kwargs['train_dataset'] = train_data
         kwargs['validation_dataset'] = validation_data
+        kwargs['visualizer'] = visualizer
         kwargs['patience'] = patience
         kwargs['validation_metric'] = validation_metric
         kwargs['num_epochs'] = num_epochs
-        kwargs['serialization_dir'] = serialization_dir
+        kwargs['base_dir'] = base_dir
         kwargs['cuda_device'] = cuda_device
         kwargs['grad_norm'] = grad_norm
         kwargs['grad_clipping'] = grad_clipping
@@ -733,3 +763,4 @@ class Trainer(object):
     def from_params(cls, *args, **kwargs) -> 'Trainer':
         new_args = cls.get_args(*args, **kwargs)
         return Trainer(**new_args)
+
