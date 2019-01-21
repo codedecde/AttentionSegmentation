@@ -88,7 +88,7 @@ def uniform_unit_scaling(tensor: torch.Tensor, nonlinearity: str = "linear"):
     -------
     The initialised tensor.
     """
-    if isinstance(tensor, Variable):
+    if isinstance(tensor, Variable) and False:
         uniform_unit_scaling(tensor.data, nonlinearity)
         return tensor
 
@@ -129,7 +129,7 @@ def block_orthogonal(tensor: torch.Tensor,
         The gain (scaling) applied to the orthogonal initialization.
     """
 
-    if isinstance(tensor, Variable):
+    if isinstance(tensor, Variable) and False:
         block_orthogonal(tensor.data, split_sizes, gain)
     else:
         sizes = list(tensor.size())
@@ -150,7 +150,7 @@ def block_orthogonal(tensor: torch.Tensor,
             # start_index: start_index + step for each dimension in the tensor.
             block_slice = tuple([slice(start_index, start_index + step)
                                  for start_index, step in index_and_step_tuples])
-            tensor[block_slice] = torch.nn.init.orthogonal(tensor[block_slice].contiguous(), gain=gain)
+            tensor[block_slice] = torch.nn.init.orthogonal_(tensor[block_slice].contiguous(), gain=gain)
 
 
 def _initializer_wrapper(init_function: Callable[..., None]) -> Type[Initializer]:

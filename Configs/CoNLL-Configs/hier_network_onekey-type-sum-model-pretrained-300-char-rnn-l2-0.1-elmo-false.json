@@ -36,7 +36,7 @@
         "type": "embedding",
         "vocab_namespace": "token_ids",
         "embedding_dim": 300,
-        // "pretrained_file": "./Data/embeddings/GloveEmbeddings/glove.6B.300d.txt.gz",
+        "pretrained_file": "./Data/embeddings/GloveEmbeddings/glove.6B.300d.txt.gz",
         "trainable": true
       },
       "chars": {
@@ -100,7 +100,7 @@
     // },
     "num_epochs": 50,
     "patience": 10,
-    "cuda_device": -1,
+    "cuda_device": 0,
     "validation_metric": "+accuracy",
     "num_serialized_models_to_keep": 1,
     "learning_rate_scheduler": {
