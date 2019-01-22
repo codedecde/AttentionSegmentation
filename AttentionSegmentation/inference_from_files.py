@@ -2,6 +2,7 @@ from __future__ import absolute_import
 from AttentionSegmentation.model.inference import BasicAttentionModelRunner
 import argparse
 import sys
+import json
 
 
 def get_arguments():
@@ -14,6 +15,9 @@ def get_arguments():
     parser.add_argument('-hf', '--html_file', action="store", dest="html_file",
                         type=str, default="",
                         help="The html file used for output")
+    parser.add_argument("-pf", "--pred_file", action="store", dest="pred_file",
+                        type=str, default="",
+                        help="The prediction json file")
     args = parser.parse_args(sys.argv[1:])
     return args
 
@@ -25,4 +29,7 @@ if __name__ == "__main__":
     valid_file = args.val_file
     output_file = args.html_file
     # "./WebOuts/visualize.html"
-    runner._process_file(valid_file, output_file)
+    predictions = runner._process_file(valid_file, output_file)
+    if args.pred_file != "":
+        with open(args.pred_file, "w") as f:
+            json.dump(predictions, f, indent=4, ensure_ascii=True)
