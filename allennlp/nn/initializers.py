@@ -89,6 +89,8 @@ def uniform_unit_scaling(tensor: torch.Tensor, nonlinearity: str = "linear"):
     The initialised tensor.
     """
     if isinstance(tensor, Variable) and False:
+        # in torch 1.0, Tensor class is also an instance
+        # of the variable class
         uniform_unit_scaling(tensor.data, nonlinearity)
         return tensor
 
@@ -130,6 +132,8 @@ def block_orthogonal(tensor: torch.Tensor,
     """
 
     if isinstance(tensor, Variable) and False:
+        # in torch 1.0, Tensor class is also an instance
+        # of the variable class
         block_orthogonal(tensor.data, split_sizes, gain)
     else:
         sizes = list(tensor.size())
