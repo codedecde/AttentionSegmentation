@@ -10,6 +10,7 @@ import os
 import numpy as np
 import json
 import pdb
+import re
 
 from allennlp.common.tqdm import Tqdm
 from allennlp.common.params import Params
@@ -31,6 +32,8 @@ from AttentionSegmentation.visualization.visualize_attns \
 from AttentionSegmentation.commons.utils import \
     read_from_config_file, to_numpy
 import AttentionSegmentation.model.classifiers as Models
+from AttentionSegmentation.model.attn2labels import \
+    get_binary_preds_from_attns
 import AttentionSegmentation.reader as Readers
 
 # from Model.predicted_instances\
@@ -175,11 +178,14 @@ class BasicAttentionModelRunner(BaseModelRunner):
             vocab_dir=vocab_dir, base_embed_dir=base_embed_dir)
 
     @overrides
-    def _process_file(self, filename: str, html_file: str = ""):
+    def _process_file(self, filename: str, html_file: str = "", tol=0.01):
         """
             Generates predictions from a file
         """
         instances = self._reader.read(filename)
+        indexer = self._reader.get_label_indexer()
+        # FIXME: Currently supporting binary classification
+        index_tag = list(indexer.tags2ix.keys())[0]
         iterator = self._data_iterator(
             instances,
             num_epochs=1,
@@ -202,10 +208,21 @@ class BasicAttentionModelRunner(BaseModelRunner):
                 label_num = instances[index].fields['labels'].labels[0]
                 # FIXME: Currently supporting binary classification
                 assert len(instances[index].fields['labels'].labels) == 1
-                index += 1
                 pred = output_dict["preds"][ix]
                 attn = output_dict["attentions"][ix]
                 gold = "O"
+                gold_labels = instances[index].fields['tags'].labels
+                gold_labels = indexer.extract_relevant(gold_labels)
+                if pred == "O":
+                    pred_labels = ["O" for _ in range(len(attn))]
+                else:
+                    pred_labels = get_binary_preds_from_attns(
+                        attn, index_tag, tol
+                    )
+                assert len(attn) == len(gold_labels), \
+                    "Error. Found lengths {0}, expected {1}".format(
+                        len(attn), len(gold_labels)
+                )
                 if label_num < len(index_labeler.ix2tags):
                     gold = index_labeler.ix2tags[label_num]
                 if pred == gold:
@@ -214,9 +231,12 @@ class BasicAttentionModelRunner(BaseModelRunner):
                     "text": text,
                     "pred": pred,
                     "attn": attn,
-                    "gold": gold
+                    "gold": gold,
+                    "pred_labels": pred_labels,
+                    "gold_labels": gold_labels
                 }
                 predictions.append(prediction)
+                index += 1
         if html_file != "":
             colorized_predictions_to_webpage(
                 predictions, vis_page=html_file)

@@ -26,6 +26,27 @@ class LabelIndexer(object):
         # self.tags2ix does not contain the 'O' tag
         return len(self.tags2ix) + 1
 
+    def extract_relevant(self, ner_tags: List[str]) -> List[str]:
+        """
+        Takes in a list of ner tags, and keeps only those tags
+        that we care about
+
+        Arguments:
+            ner_tags (List[str]): The list of NER Tags
+
+        Returns:
+            filtered_tags (List[str]): The list of filtered
+                ner_tags
+        """
+        filtered_tags = []
+        for gold_tag in ner_tags:
+            for tag in self.tags2ix:
+                if re.match(f".*-{tag}", gold_tag) is not None:
+                    filtered_tags.append(gold_tag)
+                else:
+                    filtered_tags.append("O")
+        return filtered_tags
+
     def index(
         self,
         ner_tags: List[str],
@@ -36,7 +57,7 @@ class LabelIndexer(object):
         performs a regex match against the ner tags (.*-TAG), and
         generates the label accordingly
 
-        Parameters:
+        Arguments:
             ner_tags (List[str]): The list of NER Tags
             as_label_field (bool): If True, returns a MultiLabelField,
                 otherwise returns a list of tag indices

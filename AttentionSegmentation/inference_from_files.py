@@ -18,6 +18,9 @@ def get_arguments():
     parser.add_argument("-pf", "--pred_file", action="store", dest="pred_file",
                         type=str, default="",
                         help="The prediction json file")
+    parser.add_argument("-tol", "--tol", action="store", dest="tol",
+                        type=float, default=0.01,
+                        help="Attention threshold tolerance")
     args = parser.parse_args(sys.argv[1:])
     return args
 
@@ -29,7 +32,7 @@ if __name__ == "__main__":
     valid_file = args.val_file
     output_file = args.html_file
     # "./WebOuts/visualize.html"
-    predictions = runner._process_file(valid_file, output_file)
+    predictions = runner._process_file(valid_file, output_file, tol=args.tol)
     if args.pred_file != "":
         with open(args.pred_file, "w") as f:
             json.dump(predictions, f, indent=4, ensure_ascii=True)
