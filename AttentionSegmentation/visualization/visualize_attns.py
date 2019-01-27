@@ -17,6 +17,8 @@ from allennlp.common.tqdm import Tqdm
 
 
 from AttentionSegmentation.model.metrics import ConfusionMatrix
+from AttentionSegmentation.model.attn2labels \
+    import get_binary_preds_from_attns
 
 colors2rgb = {}
 
@@ -146,11 +148,13 @@ class html_visualizer(object):
     """This collects the different visualization methods for easy visualization
     """
 
-    def __init__(self, vocab, reader):
+    def __init__(self, vocab, reader, tol=0.01):
         self._vocab = vocab
         self._iterator = BasicIterator(batch_size=32)
         self._iterator.index_with(self._vocab)
         self._reader = reader
+        self._indexer = self._reader.get_label_indexer()
+        self._tol = tol
 
     def _get_text_from_instance(self, instance: Instance) -> List[str]:
         """Helper function to extract text from an instance
@@ -186,6 +190,7 @@ class html_visualizer(object):
         predictions = []
         index = 0
         index_labeler = self._reader.get_label_indexer()
+        index_tag = list(self._indexer.tags2ix.keys())[0]
         correct_counts = 0.
         for batch in inference_generator_tqdm:
             # Currently I don't support multi-gpu data parallel
@@ -199,6 +204,14 @@ class html_visualizer(object):
                 pred = output_dict["preds"][ix]
                 attn = output_dict["attentions"][ix]
                 gold = "O"
+                gold_labels = instances[index].fields['tags'].labels
+                gold_labels = self._indexer.extract_relevant(gold_labels)
+                if pred == "O":
+                    pred_labels = ["O" for _ in range(len(attn))]
+                else:
+                    pred_labels = get_binary_preds_from_attns(
+                        attn, index_tag, self._tol
+                    )
                 if label_num < len(index_labeler.ix2tags):
                     gold = index_labeler.ix2tags[label_num]
                 if pred == gold:
@@ -207,7 +220,9 @@ class html_visualizer(object):
                     "text": text,
                     "pred": pred,
                     "attn": attn,
-                    "gold": gold
+                    "gold": gold,
+                    "pred_labels": pred_labels,
+                    "gold_labels": gold_labels
                 }
                 predictions.append(prediction)
         if filename != "":
