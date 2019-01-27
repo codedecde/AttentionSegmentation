@@ -200,7 +200,6 @@ class html_visualizer(object):
                 label_num = instances[index].fields['labels'].labels[0]
                 # FIXME: Currently supporting binary classification
                 assert len(instances[index].fields['labels'].labels) == 1
-                index += 1
                 pred = output_dict["preds"][ix]
                 attn = output_dict["attentions"][ix]
                 gold = "O"
@@ -225,6 +224,7 @@ class html_visualizer(object):
                     "gold_labels": gold_labels
                 }
                 predictions.append(prediction)
+                index += 1
         if filename != "":
             colorized_predictions_to_webpage(
                 predictions, vis_page=filename)
