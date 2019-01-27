@@ -4,6 +4,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sn
+import pdb
+import json
+import re
+import argparse
+import sys
 
 from allennlp.data.iterators import BasicIterator
 from allennlp.data.instance import Instance
@@ -12,6 +17,12 @@ from allennlp.common.tqdm import Tqdm
 
 
 from AttentionSegmentation.model.metrics import ConfusionMatrix
+
+colors2rgb = {}
+
+colors2rgb['purple'] = '#712f79'  # Pred tag, gold no tag
+colors2rgb['brickRed'] = '#d2405f'  # Pred no tag, gold tag
+colors2rgb['yellowGreen'] = '#e0ff4f'  # Both tag
 
 
 def colorized_predictions_to_webpage(
@@ -25,20 +36,71 @@ def colorized_predictions_to_webpage(
                 * pred (str): The predicted token
                 * gold (str): The gold token
                 * attn (List[float]): The list of float tokens
+                * pred_labels (List[str]) : The list of predicted
+                    labels
+                * gold_labels (List[str]) : The list of gold labels
         vis_page (str): The final output page
 
     """
     with open(vis_page, "w") as f:
+        purple = colors2rgb['purple']
+        brickRed = colors2rgb['brickRed']
+        yellowGreen = colors2rgb['yellowGreen']
         header = (
             '<html>\n'
             '<head>\n'
             '<style>\n'  # The CSS element
-            '   correct { color: #8dde28; padding-right: 5px; padding-left: 5px }\n'
-            '   incorrect { color: #e93f3f; padding-right: 5px; padding-left: 5px }\n'
+            '   correct { '
+            '       color: #8dde28; '
+            '       padding-right: 5px; '
+            '       padding-left: 5px '
+            '   }\n'
+            '   incorrect { '
+            '       color: #e93f3f; '
+            '       padding-right: 5px; '
+            '       padding-left: 5px '
+            '   }\n'
             '   body { color: color:#000000}\n'
+            '   .tooltip { '
+            '       position: relative; '
+            '       display: inline-block; '
+            # '       border-bottom: 1px dotted black;'
+            '   }\n'
+            '   .tooltip .tooltiptext {  '
+            '       visibility: hidden;  '
+            '       width: 120px;  '
+            '       background-color: black; '
+            '       color: #fff; '
+            '       text-align: center;  '
+            '       border-radius: 6px;  '
+            '       padding: 5px 0;  '
+            '       position: absolute;  '
+            '       z-index: 1;  '
+            '       top: 150%; '
+            '       left: 50%; '
+            '       margin-left: -60px;  '
+            '   }\n'
+            '   .tooltip .tooltiptext::after { '
+            '       content: " ";    '
+            '       position: absolute;  '
+            '       bottom: 100%;  /* At the top of the tooltip */   '
+            '       left: 50%;   '
+            '       margin-left: -5px;   '
+            '       border-width: 5px;   '
+            '       border-style: solid; '
+            '       border-color: transparent transparent black transparent; '
+            '   }\n'
+            '   .tooltip:hover .tooltiptext {  '
+            '       visibility: visible; '
+            '   }\n'
             '</style>\n'
-            '<\head>\n'
+            '</head>\n'
             '<body>'
+            'Key:</br>'
+            f'<span style="background-color:{purple}; padding-left: 10px; padding-right: 10px; color:white" >Pred tag, Gold no tag</span> </br>'
+            f'<span style="background-color:{brickRed}; padding-left: 10px; padding-right: 10px; color:white" >Pred no tag, Gold tag</span> </br>'
+            f'<span style="background-color:{yellowGreen}; padding-left: 10px; padding-right: 10px; color:black">Both Correct tag</span> </br>'
+            '</br>'
         )
         f.write(header)
         for pred in predictions:
@@ -46,7 +108,9 @@ def colorized_predictions_to_webpage(
             attn_weights = pred["attn"]
             pred_label = pred["pred"]
             gold_label = pred["gold"]
-            html = colorize_text(txt, attn_weights)
+            pred_tags = pred["pred_labels"]
+            gold_tags = pred["gold_labels"]
+            html = colorize_text(txt, attn_weights, pred_tags, gold_tags)
             if pred_label == gold_label:
                 pred_gold = (
                     '<correct>'
@@ -248,18 +312,36 @@ def plot_confusion_matrix(confusion_matrix: ConfusionMatrix,
     return confusion_matrix
 
 
-def _attn_to_rgb(attn_weights):
+def _attn_to_rgb(attn_weights, pred_tag, gold_tag):
+    pred_tag = re.sub(".*-", "", pred_tag)
+    gold_tag = re.sub(".*-", "", gold_tag)
     attn_hex = str(hex(int(abs(attn_weights) * 255)))[2:]
-    rgb = '#22aadd' + attn_hex
+    if pred_tag == gold_tag:
+        if pred_tag != "O":
+            rgb = colors2rgb['yellowGreen']  # + attn_hex
+        else:
+            rgb = '#22aadd' + attn_hex
+    else:
+        if pred_tag == "O":
+            rgb = colors2rgb["brickRed"]  # + attn_hex
+        elif gold_tag == "O":
+            rgb = colors2rgb["purple"]  # + attn_hex
+        else:
+            pdb.set_trace()
     return rgb
 
 
-def _get_word_color(word, attn_weights):
-    return '<span style="background-color:' + _attn_to_rgb(attn_weights) + \
-        '">' + word + '</span>'
+def _get_word_color(word, attn_weights, pred_tag, gold_tag):
+    color = _attn_to_rgb(attn_weights, pred_tag, gold_tag)
+    return (
+        '<div class="tooltip">'
+        f'    <span style="background-color:{color}">{word}</span>'
+        f'    <span class="tooltiptext">{attn_weights:2.2f}</span>'
+        f'</div>'
+    )
 
 
-def colorize_text(text, attn_weights):
+def colorize_text(text, attn_weights, pred_tags, gold_tags):
     """
     text: a string with the text to visualize
     attn_weights: a numpy vector in the range [0, 1]
@@ -269,7 +351,9 @@ def colorize_text(text, attn_weights):
     assert len(words) == len(attn_weights)
     html_blocks = [''] * len(words)
     for i in range(len(words)):
-        html_blocks[i] += _get_word_color(words[i], attn_weights[i])
+        html_blocks[i] += _get_word_color(
+            words[i], attn_weights[i], pred_tags[i], gold_tags[i]
+        )
     return ' '.join(html_blocks)
 
 
@@ -298,20 +382,25 @@ def colorized_list_to_webpage(
             f.write(f"{html}<br>")
 
 
-if __name__ == "__main__":
-    # colorized_text_to_webpage(
-    #     'This is a test', [0.1, 0.2, 0.1, 0.7], vis_page="WebOuts/test.html")
-    lst_txt = [
-        "This is a test", "And another one", "And one last for good luck"
-    ]
-    attn_weights = [[1, 1, 1, 10], [4, 2, 1], [3, 2, 1, 4, 5, 9]]
-    for ix in range(len(attn_weights)):
-        dr = float(sum(attn_weights[ix]))
-        for jx in range(len(attn_weights[ix])):
-            attn_weights[ix][jx] /= dr
-    colorized_list_to_webpage(
-        lst_txt, attn_weights, vis_page="WebOuts/test.html"
-    )
+def get_arguments():
+    parser = argparse.ArgumentParser(description="Time Tagger")
+    parser.add_argument('-src', '--src', action="store",
+                        dest="src", type=str,
+                        help="path to the source predictions", required=True)
+    parser.add_argument('-tgt', '--tgt', action="store",
+                        dest="tgt", type=str,
+                        help="path to the target predictions", required=True)
+    args = parser.parse_args(sys.argv[1:])
+    return args
 
-    # colorized_text_to_webpage(
-    #     'This is a test', [0.1, 0.2, 0.1, 0.7], vis_page="WebOuts/test.html")
+
+if __name__ == "__main__":
+    args = get_arguments()
+    fil = args.src
+    with open(fil, 'r') as f:
+        predictions = json.load(f)
+    fil = args.tgt
+    colorized_predictions_to_webpage(
+        predictions,
+        args.tgt
+    )
