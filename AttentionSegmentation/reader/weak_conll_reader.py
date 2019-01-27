@@ -2,6 +2,7 @@ from typing import Dict, List, Sequence, Iterable
 import itertools
 import logging
 import logging
+import re
 
 from overrides import overrides
 
@@ -20,6 +21,7 @@ from AttentionSegmentation.reader.label_indexer import LabelIndexer
 
 
 logger = logging.getLogger(__name__)
+NUM_TOKEN = "@@NUM@@"
 
 
 def _is_divider(line: str) -> bool:
@@ -71,6 +73,7 @@ class WeakConll2003DatasetReader(DatasetReader):
                  tag_label: str = "ner",
                  feature_labels: Sequence[str] = (),
                  lazy: bool = False,
+                 convert_numbers: bool = False,
                  coding_scheme: str = "IOB1",
                  label_indexer: LabelIndexer = None) -> None:
         super(WeakConll2003DatasetReader, self).__init__(lazy)
@@ -92,6 +95,7 @@ class WeakConll2003DatasetReader(DatasetReader):
         self.coding_scheme = coding_scheme
 
         self.label_indexer = label_indexer
+        self.convert_numbers = convert_numbers
 
     def get_label_indexer(self):
         return self.label_indexer
@@ -114,8 +118,14 @@ class WeakConll2003DatasetReader(DatasetReader):
                         list(field) for field in zip(*fields)
                     ]
                     # TextField requires ``Token`` objects
-                    tokens = [Token(token) for token in tokens]
-                    sequence = TextField(tokens, self._token_indexers)
+                    new_tokens = []
+                    for token in tokens:
+                        if self.convert_numbers:
+                            if re.match(r"^[0-9]+$", token):
+                                token = NUM_TOKEN
+                        new_tokens.append(Token(token))
+                    # tokens = [Token(token) for token in tokens]
+                    sequence = TextField(new_tokens, self._token_indexers)
 
                     instance_fields: Dict[str, Field] = {'tokens': sequence}
 
@@ -167,10 +177,12 @@ class WeakConll2003DatasetReader(DatasetReader):
         label_indexer = None
         if label_indexer_params is not None:
             label_indexer = LabelIndexer.from_params(label_indexer_params)
+        convert_numbers = params.pop("convert_numbers", False)
         params.assert_empty(cls.__name__)
         return WeakConll2003DatasetReader(token_indexers=token_indexers,
                                           tag_label=tag_label,
                                           feature_labels=feature_labels,
                                           lazy=lazy,
+                                          convert_numbers=convert_numbers,
                                           coding_scheme=coding_scheme,
                                           label_indexer=label_indexer)
