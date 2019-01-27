@@ -27,6 +27,7 @@ from __future__ import division, print_function, unicode_literals
 import argparse
 import sys
 from collections import defaultdict
+import pdb
 
 # sanity check
 def parse_args():
@@ -156,15 +157,16 @@ def splitTag(chunkTag, oTag = "O", raw = False):
             tag, type  = chunkTag, None
     return tag, type
 
-def countChunks(fileIterator, args):
+def countChunks(predictions, delimiter=None, raw=False, oTag="O"):
     """
     Process input in given format and count chunks using the last two columns;
     return correctChunk, foundGuessed, foundCorrect, correctTags, tokenCounter
     """
     boundary = "-X-"     # sentence boundary
-    delimiter = args.delimiter
-    raw = args.raw
-    oTag = args.oTag
+    # delimiter = args.delimiter
+    # raw = args.raw
+    # otag = args.otag
+    # print(delimiter, raw, otag)
 
     correctChunk = defaultdict(int)     # number of correctly identified chunks
     foundCorrect = defaultdict(int)     # number of chunks in corpus per type
@@ -178,13 +180,19 @@ def countChunks(fileIterator, args):
     lastCorrect, lastCorrectType = "O", None    # previous chunk tag in corpus
     lastGuessed, lastGuessedType = "O", None  # previously identified chunk tag
 
-    for line in fileIterator:
+    # for line in predictions:
+    for features in predictions:
         # each non-empty line must contain >= 3 columns
-        features = line.strip().split(delimiter)
-        if not features or features[0] == boundary:
-            features = [boundary, "O", "O"]
-        elif len(features) < 3:
-             raise IOError("conlleval: unexpected number of features in line %s\n" % line)
+        # features = line.strip().split(delimiter)
+        # if not features or features[0] == boundary:
+        #     features = [boundary, "O", "O"]
+        # elif len(features) < 3:
+        #      raise IOError("conlleval: unexpected number of features in line %s\n" % line)
+        if len(features) < 3:
+            print(len(features))
+            print(features)
+            raise IOError(
+                "conlleval: unexpected number of features in line %s\n" % " ".join(features))
 
         # extract tags from last 2 columns
         guessed, guessedType = splitTag(features[-1], oTag=oTag, raw=raw)
@@ -274,7 +282,7 @@ def evaluate(correctChunk, foundGuessed, foundCorrect, correctTags, tokenCounter
 if __name__ == "__main__":
     args = parse_args()
     # process input and count chunks
-    correctChunk, foundGuessed, foundCorrect, correctTags, tokenCounter = countChunks(sys.stdin, args)
+    correctChunk, foundGuessed, foundCorrect, correctTags, tokenCounter = countChunks(sys.stdin)
 
     # compute metrics and print
     evaluate(correctChunk, foundGuessed, foundCorrect, correctTags, tokenCounter, latex=args.latex)
