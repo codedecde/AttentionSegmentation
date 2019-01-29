@@ -121,8 +121,9 @@ class WeakConll2003DatasetReader(DatasetReader):
                     new_tokens = []
                     for token in tokens:
                         if self.convert_numbers:
-                            if re.match(r"^[0-9]+$", token):
-                                token = NUM_TOKEN
+                            token = re.sub(r"[0-9]+", NUM_TOKEN, token)
+                            # if re.match(r"^[0-9]+$", token):
+                            #     token = NUM_TOKEN
                         new_tokens.append(Token(token))
                     # tokens = [Token(token) for token in tokens]
                     sequence = TextField(new_tokens, self._token_indexers)
