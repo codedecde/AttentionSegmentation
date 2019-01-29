@@ -63,7 +63,7 @@ class KeyedAttention(BaseAttention):
 
     """
 
-    def __init__(self, key_dim, ctxt_dim, attn_type, dropout=0.5):
+    def __init__(self, key_dim, ctxt_dim, attn_type, dropout=0.0):
         super(KeyedAttention, self).__init__(
             input_emb_size=ctxt_dim,
             key_emb_size=key_dim,
@@ -72,8 +72,7 @@ class KeyedAttention(BaseAttention):
         self.attn_type = attn_type
         self.proj_ctxt = nn.Linear(ctxt_dim, key_dim)
         self.key = nn.Parameter(torch.Tensor(key_dim, 1).uniform_(-0.01, 0.01))
-        self.dropout = dropout
-        # TODO: Implement dropout for keyed attention
+        self._dropout = nn.Dropout(p=dropout) if dropout != 0. else None
         if self.attn_type == "sum":
             self.proj_ctxt_key_matrix = nn.Linear(key_dim, 1)
 
@@ -110,6 +109,8 @@ class KeyedAttention(BaseAttention):
             negval = -10e5
             logits = (float_mask * logits) + ((1 - float_mask) * negval)
         attn_weights = F.softmax(logits, -1).unsqueeze(1)
+        if self._dropout_module is not None:
+            attn_weights = self._dropout_module(attn_weights)
         weighted_emb = torch.bmm(attn_weights, context).squeeze(1)
 
         return weighted_emb, attn_weights.squeeze(1)
