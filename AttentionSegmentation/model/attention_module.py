@@ -109,8 +109,8 @@ class KeyedAttention(BaseAttention):
             negval = -10e5
             logits = (float_mask * logits) + ((1 - float_mask) * negval)
         attn_weights = F.softmax(logits, -1).unsqueeze(1)
-        if self._dropout_module is not None:
-            attn_weights = self._dropout_module(attn_weights)
+        if self._dropout is not None:
+            attn_weights = self._dropout(attn_weights)
         weighted_emb = torch.bmm(attn_weights, context).squeeze(1)
 
         return weighted_emb, attn_weights.squeeze(1)
