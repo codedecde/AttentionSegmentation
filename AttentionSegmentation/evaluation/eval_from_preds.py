@@ -27,7 +27,8 @@ def get_arguments():
                         )
     parser.add_argument('-tgt', '--tgt', action="store",
                         dest="tgt", type=str,
-                        help="path to the target predictions", required=True)
+                        help="path to the target predictions", default=""
+                        )
     args = parser.parse_args(sys.argv[1:])
     return args
 
@@ -61,8 +62,9 @@ if __name__ == "__main__":
         foundCorrect, correctTags, tokenCounter,
         latex=False
     )
-    colorized_predictions_to_webpage(
-        preds,
-        args.tgt
-    )
+    if args.tgt != "":
+        colorized_predictions_to_webpage(
+            preds,
+            args.tgt
+        )
         # f.write("\n\n".join(buf))
