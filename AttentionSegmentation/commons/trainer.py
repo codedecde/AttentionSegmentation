@@ -503,7 +503,8 @@ class Trainer(object):
                     filename=filename,
                     cuda_device=self._iterator_device
                 )
-                with open(self._base_dir, "w") as f:
+                prediction_file = os.path.join(self._base_dir, "predictions.json")
+                with open(prediction_file, "w") as f:
                     json.dump(predictions, f, ensure_ascii=True, indent=4)
 
             if self._learning_rate_scheduler:
