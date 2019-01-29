@@ -2,6 +2,7 @@ from __future__ import absolute_import
 import logging
 import os
 import shutil
+import json
 from collections import deque
 import time
 import re
@@ -496,12 +497,14 @@ class Trainer(object):
                 filename = os.path.join(
                     self._visualization_dirname, "validation.html")
                 logger.info(f"Writing validation visualization at {filename}")
-                self._visualizer.visualize_data(
+                predictions = self._visualizer.visualize_data(
                     instances=self._validation_data,
                     model=self._model,
                     filename=filename,
                     cuda_device=self._iterator_device
                 )
+                with open(self._base_dir, "w") as f:
+                    json.dump(predictions, f, ensure_ascii=True, indent=4)
 
             if self._learning_rate_scheduler:
                 # The LRScheduler API is agnostic to whether your schedule requires a validation metric -

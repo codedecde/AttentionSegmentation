@@ -1,5 +1,5 @@
 from __future__ import absolute_import
-from typing import List, Optional
+from typing import List, Optional, Dict
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -167,7 +167,7 @@ class html_visualizer(object):
         model: Model,
         filename: str,
         cuda_device: int = -1
-    ):
+    )-> List[Dict]:
         """This function helps visualize the attention maps
         We use a basic itereator, since a bucket iterator shuffles
         data, even for shuffle=False
@@ -176,6 +176,16 @@ class html_visualizer(object):
             data (List[Instance]) : The list of instances for inference
             filename (str) : The html file to output to
             cuda_device (int) : The GPU being used
+
+        Returns:
+            predictions (List[Dict]) : The predictions. Each contains the
+                following keys
+                * text: The token
+                * pred: The predicted label
+                * gold: The gold label
+                * pred_labels : The predicted labels for segmentation
+                * gold_labels : The gold labels for segmentation
+
         """
         iterator = self._iterator(
             instances,
@@ -228,6 +238,7 @@ class html_visualizer(object):
         if filename != "":
             colorized_predictions_to_webpage(
                 predictions, vis_page=filename)
+        return predictions
 
 
 def plot_data_point(data_point, mode="hierarchical", **kwargs):
