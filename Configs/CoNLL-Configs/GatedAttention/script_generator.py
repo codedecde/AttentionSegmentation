@@ -27,7 +27,7 @@ DROPOUT = 0.0
 for TAG in tag_list:
     raw = f"""
     {{
-      "base_output_dir": "./Experiments/CoNLL/GatedAttention/{TAG}",
+      "base_output_dir": "/home/scratch/bpatra/Experiments/CoNLL/GatedAttention/{TAG}",
       "dataset_reader": {{
         "type": "WeakConll2003DatasetReader",
         "tag_label": "ner",
