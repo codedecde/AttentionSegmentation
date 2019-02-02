@@ -221,7 +221,7 @@ class GatedAttention(BaseAttention):
             attn_type=self.attn_type,
             proj_ctxt_key_matrix=self.proj_ctxt_key_matrix
         )  # batch x seq_len
-        attn_weights = torch.sigmoid(logits, -1).unsqueeze(1)
+        attn_weights = torch.sigmoid(logits).unsqueeze(1)
         if self._dropout is not None:
             attn_weights = self._dropout(attn_weights)
         weighted_emb = torch.bmm(attn_weights, context).squeeze(1)
