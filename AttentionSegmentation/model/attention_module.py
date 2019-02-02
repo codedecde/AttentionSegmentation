@@ -48,6 +48,44 @@ class BaseAttention(nn.Module):
         """
         return self.input_emb_size
 
+    def get_logits(
+        self, proj_ctxt, key, mask,
+        attn_type, proj_ctxt_key_matrix=None
+    ):
+        """This generates the logits for attention methods
+
+        Arguments:
+            proj_ctxt (``torch.Tensor``):
+                batch x seq_len x embed_dim: The (projected) context
+            mask (``torch.LongTensor``):
+                batch x seq_len: The context mask
+            attn_type (str): ("sum"|"dot") The type of
+            attention mechanism. "sum" is the usual
+            Bahdanau model of attention, while
+            "dot" is the dot product
+            key (``torch.Tensor``): the key
+            proj_ctxt_key_matrix (Optional[nn.Linear]): Projecting
+                the logits for the attention type "sum"
+
+        Returns:
+            logits (``torch.Tensor``):
+                batch x seq_len : The logits
+        """
+        if attn_type == "dot":
+            batch, seq_len, key_dim = proj_ctxt.size()
+            scores = torch.mm(proj_ctxt.view(-1, key_dim), key)
+            logits = scores.contiguous().view(batch, seq_len)
+        elif attn_type == "sum":
+            batch, seq_len, key_dim = proj_ctxt.size()
+            expanded_key = key.transpose(0, 1).expand(batch, seq_len, -1)
+            ctxt_key_matrix = torch.tanh(expanded_key + proj_ctxt)
+            logits = proj_ctxt_key_matrix(ctxt_key_matrix).squeeze(-1)
+        if mask is not None:
+            float_mask = mask.float()
+            negval = -10e5
+            logits = (float_mask * logits) + ((1 - float_mask) * negval)
+        return logits
+
 
 class KeyedAttention(BaseAttention):
     """Computes a single attention distribution,
@@ -75,6 +113,8 @@ class KeyedAttention(BaseAttention):
         self._dropout = nn.Dropout(p=dropout) if dropout != 0. else None
         if self.attn_type == "sum":
             self.proj_ctxt_key_matrix = nn.Linear(key_dim, 1)
+        else:
+            self.proj_ctxt_key_matrix = None
 
     def forward(self, context, mask):
         """The forward pass
@@ -95,24 +135,96 @@ class KeyedAttention(BaseAttention):
 
         """
         proj_ctxt = self.proj_ctxt(context)  # batch x seq_len x key_dim
-        if self.attn_type == "dot":
-            batch, seq_len, key_dim = proj_ctxt.size()
-            scores = torch.mm(proj_ctxt.view(-1, key_dim), self.key)
-            logits = scores.contiguous().view(batch, seq_len)
-        elif self.attn_type == "sum":
-            batch, seq_len, key_dim = proj_ctxt.size()
-            expanded_key = self.key.transpose(0, 1).expand(batch, seq_len, -1)
-            ctxt_key_matrix = torch.tanh(expanded_key + proj_ctxt)
-            logits = self.proj_ctxt_key_matrix(ctxt_key_matrix).squeeze(-1)
-        if mask is not None:
-            float_mask = mask.float()
-            negval = -10e5
-            logits = (float_mask * logits) + ((1 - float_mask) * negval)
+        logits = self.get_logits(
+            proj_ctxt=proj_ctxt,
+            key=self.key,
+            mask=mask,
+            attn_type=self.attn_type,
+            proj_ctxt_key_matrix=self.proj_ctxt_key_matrix
+        )
         attn_weights = F.softmax(logits, -1).unsqueeze(1)
         if self._dropout is not None:
             attn_weights = self._dropout(attn_weights)
         weighted_emb = torch.bmm(attn_weights, context).squeeze(1)
 
+        return weighted_emb, attn_weights.squeeze(1)
+
+    @classmethod
+    def from_params(cls, params: Params):
+        """Construct from ``Params``
+        """
+        key_dim = params.pop("key_emb_size")
+        ctxt_emb_size = params.pop("ctxt_emb_size")
+        attn_type = params.pop("attn_type")
+        dropout = params.pop("dropout", 0.0)
+        params.assert_empty(cls.__name__)
+        return cls(
+            key_dim=key_dim,
+            ctxt_dim=ctxt_emb_size,
+            attn_type=attn_type,
+            dropout=dropout)
+
+
+class GatedAttention(BaseAttention):
+    """Computes a single attention distribution,
+    based on a learned key. Different from KeyedAttention
+    in that instead of the softmax, we use a sigmoid gate
+
+    Arguments:
+        key_dim (int): The size of the key
+        ctxt_dim (int): The size of the context
+        attn_type (str): ("sum"|"dot") The type of
+            attention mechanism. "sum" is the usual
+            Bahdanau model of attention, while
+            "dot" is the dot product
+
+    """
+
+    def __init__(self, key_dim, ctxt_dim, attn_type, dropout=0.0):
+        super(GatedAttention, self).__init__(
+            input_emb_size=ctxt_dim,
+            key_emb_size=key_dim,
+            output_emb_size=ctxt_dim
+        )
+        self.attn_type = attn_type
+        self.proj_ctxt = nn.Linear(ctxt_dim, key_dim)
+        self.key = nn.Parameter(torch.Tensor(key_dim, 1).uniform_(-0.01, 0.01))
+        self._dropout = nn.Dropout(p=dropout) if dropout != 0. else None
+        if self.attn_type == "sum":
+            self.proj_ctxt_key_matrix = nn.Linear(key_dim, 1)
+        else:
+            self.proj_ctxt_key_matrix = None
+
+    def forward(self, context, mask):
+        """The forward pass
+
+        Arguments:
+            context (``torch.Tensor``):
+                batch x seq_len x embed_dim: The Context
+            mask (``torch.LongTensor``):
+                batch x seq_len: The context mask
+        Returns:
+            (``torch.Tensor``, ``torch.Tensor``)
+
+            weighed_emb: batch x output_embed_size:
+            The attention weighted embeddings
+
+            attn_weights: batch x seq_len
+            The attention weights
+
+        """
+        proj_ctxt = self.proj_ctxt(context)  # batch x seq_len x key_dim
+        logits = self.get_logits(
+            proj_ctxt=proj_ctxt,
+            key=self.key,
+            mask=mask,
+            attn_type=self.attn_type,
+            proj_ctxt_key_matrix=self.proj_ctxt_key_matrix
+        )  # batch x seq_len
+        attn_weights = torch.sigmoid(logits, -1).unsqueeze(1)
+        if self._dropout is not None:
+            attn_weights = self._dropout(attn_weights)
+        weighted_emb = torch.bmm(attn_weights, context).squeeze(1)
         return weighted_emb, attn_weights.squeeze(1)
 
     @classmethod
