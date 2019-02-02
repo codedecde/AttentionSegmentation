@@ -9,7 +9,8 @@ SCRIPT_DIR = os.path.join(BASE_DIR, "Scripts")
 
 NUM_SCRIPTS = 4
 tag_list = ["LOC", "PER", "ORG", "MISC"]
-drop_list = [0.2, 0.4, 0.5, 0.6, 0.8]
+# drop_list = [0.2, 0.4, 0.5, 0.6, 0.8]
+drop_list = [0.01, 0.02, 0.05]
 TOTAL = len(tag_list) * len(drop_list)
 
 num_per_script = -(-TOTAL // NUM_SCRIPTS)
