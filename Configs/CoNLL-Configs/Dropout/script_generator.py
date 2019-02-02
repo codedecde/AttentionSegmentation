@@ -7,6 +7,10 @@ BASE_DIR = os.path.join("Configs/CoNLL-Configs/Dropout")
 CONF_DIR = os.path.join(BASE_DIR, "Configs")
 SCRIPT_DIR = os.path.join(BASE_DIR, "Scripts")
 
+os.makedirs(BASE_DIR, exist_ok=True)
+os.makedirs(CONF_DIR, exist_ok=True)
+os.makedirs(SCRIPT_DIR, exist_ok=True)
+
 NUM_SCRIPTS = 4
 tag_list = ["LOC", "PER", "ORG", "MISC"]
 # drop_list = [0.2, 0.4, 0.5, 0.6, 0.8]
