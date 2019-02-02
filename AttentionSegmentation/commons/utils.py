@@ -153,19 +153,23 @@ def make_directory(dirname, recursive=False):
         The recursive directory structure may cause issues on a windows
         system.
     """
-    if recursive:
-        directories = dirname.split('/')
-        root = directories[0]
-        make_directory(root, recursive=False)
-        for directory in directories[1:]:
-            root = os.path.join(root, directory)
-            make_directory(root, recursive=False)
-    else:
-        try:
-            os.makedirs(dirname)
-        except OSError:
-            if not os.path.isdir(dirname):
-                raise
+    try:
+        os.makedirs(dirname, exist_ok=True)
+    except OSError:
+        raise
+    # if recursive:
+    #     directories = dirname.split('/')
+    #     root = directories[0]
+    #     make_directory(root, recursive=False)
+    #     for directory in directories[1:]:
+    #         root = os.path.join(root, directory)
+    #         make_directory(root, recursive=False)
+    # else:
+    #     try:
+    #         os.makedirs(dirname)
+    #     except OSError:
+    #         if not os.path.isdir(dirname):
+    #             raise
 
 
 def disp_params(params, name):
