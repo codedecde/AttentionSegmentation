@@ -63,7 +63,8 @@ class KeyedAttention(BaseAttention):
 
     """
 
-    def __init__(self, key_dim, ctxt_dim, attn_type, dropout=0.0):
+    def __init__(self, key_dim, ctxt_dim, attn_type, dropout=0.0,
+                 temperature=1.):
         super(KeyedAttention, self).__init__(
             input_emb_size=ctxt_dim,
             key_emb_size=key_dim,
@@ -73,6 +74,7 @@ class KeyedAttention(BaseAttention):
         self.proj_ctxt = nn.Linear(ctxt_dim, key_dim)
         self.key = nn.Parameter(torch.Tensor(key_dim, 1).uniform_(-0.01, 0.01))
         self._dropout = nn.Dropout(p=dropout) if dropout != 0. else None
+        self.temperature = temperature
         if self.attn_type == "sum":
             self.proj_ctxt_key_matrix = nn.Linear(key_dim, 1)
 
@@ -104,6 +106,7 @@ class KeyedAttention(BaseAttention):
             expanded_key = self.key.transpose(0, 1).expand(batch, seq_len, -1)
             ctxt_key_matrix = torch.tanh(expanded_key + proj_ctxt)
             logits = self.proj_ctxt_key_matrix(ctxt_key_matrix).squeeze(-1)
+        logits /= self.temperature
         if mask is not None:
             float_mask = mask.float()
             negval = -10e5
@@ -123,12 +126,15 @@ class KeyedAttention(BaseAttention):
         ctxt_emb_size = params.pop("ctxt_emb_size")
         attn_type = params.pop("attn_type")
         dropout = params.pop("dropout", 0.0)
+        temperature = params.pop("temperature", 1.0)
         params.assert_empty(cls.__name__)
         return cls(
             key_dim=key_dim,
             ctxt_dim=ctxt_emb_size,
             attn_type=attn_type,
-            dropout=dropout)
+            dropout=dropout,
+            temperature=temperature
+        )
 
 
 class DotAttention(BaseAttention):
