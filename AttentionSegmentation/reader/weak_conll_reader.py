@@ -21,7 +21,8 @@ from AttentionSegmentation.reader.label_indexer import LabelIndexer
 
 
 logger = logging.getLogger(__name__)
-NUM_TOKEN = "@@NUM@@"
+# NUM_TOKEN = "@@NUM@@"
+NUM_TOKEN = "0"
 
 
 def _is_divider(line: str) -> bool:
