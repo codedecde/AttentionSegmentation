@@ -4,6 +4,7 @@
   "dataset_reader": {
     // "type": "Conll2003DatasetReader",
     "type": "WeakConll2003DatasetReader",
+    "convert_numbers": true,
     "tag_label": "ner",
     "label_indexer": {
         "label_namespace": "labels",
@@ -72,11 +73,11 @@
       "bidirectional": true
     },
     "attention_word":{
-      "type": "KeyedAttention",
+      "type": "GatedAttention",
       "key_emb_size": 300,
       "ctxt_emb_size": 300,
       "attn_type": "sum",
-      "dropout": 0.5
+      "dropout": 0.0
     },
     "threshold": 0.5
   },
