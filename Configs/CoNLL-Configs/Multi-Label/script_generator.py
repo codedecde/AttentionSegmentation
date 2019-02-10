@@ -22,7 +22,7 @@ SCRIPT_HEADER = f"""
 PYTHON=/zfsauton3/home/bpatra/miniconda3/bin/python3.6
 
 """
-SCRATCH = "/home/scratch/bpatra"
+SCRATCH = "."
 scripts = [[SCRIPT_HEADER] for _ in range(NUM_SCRIPTS)]
 config_count = 0
 DROPOUT = 0.
@@ -31,7 +31,7 @@ TEMP = 1.
 for METHOD in METHODS:
     raw = f"""
     {{
-      "base_output_dir": "{SCRATCH}/Experiments/CoNLL/Mult-Label/{METHOD}",
+      "base_output_dir": "{SCRATCH}/Experiments/CoNLL/Multi-Label/{METHOD}",
       "dataset_reader": {{
         "type": "WeakConll2003DatasetReader",
         "tag_label": "ner",
@@ -49,9 +49,6 @@ for METHOD in METHODS:
             "chars": {{
                 "type": "characters",
                 "namespace": "token_chars"
-            }},
-            "elmo": {{
-                 "type": "elmo_characters"
             }}
          }}
       }},
@@ -67,7 +64,6 @@ for METHOD in METHODS:
             "type": "embedding",
             "vocab_namespace": "token_ids",
             "embedding_dim": 300,
-            "pretrained_file": "./Data/embeddings/GloveEmbeddings/glove.6B.300d.txt.gz",
             "trainable": true
           }},
           "chars": {{
@@ -84,18 +80,11 @@ for METHOD in METHODS:
               "dropout": 0.25,
               "bidirectional": true
             }}
-          }},
-          "elmo": {{
-              "type": "elmo_token_embedder",
-              "options_file": "./Data/embeddings/ELMOEmbeddings/elmo_2x4096_512_2048cnn_2xhighway_options.json",
-              "weight_file": "./Data/embeddings/ELMOEmbeddings/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5",
-              "do_layer_norm": false,
-              "dropout": 0.0
           }}
         }},
         "encoder_word": {{
           "type": "gru",
-          "input_size": 1484,
+          "input_size": 460,
           "hidden_size": 150,
           "num_layers": 1,
           "dropout": 0.5,
@@ -117,12 +106,12 @@ for METHOD in METHODS:
         "padding_noise": 0.1,
         "batch_size": 32
       }},
-      "visualize": true,
+      "visualize": false,
       "trainer": {{
         "optimizer": "adam",
         "num_epochs": 50,
         "patience": 10,
-        "cuda_device": 0,
+        "cuda_device": -1,
         "validation_metric": "+accuracy",
         "num_serialized_models_to_keep": 1,
         "learning_rate_scheduler": {{

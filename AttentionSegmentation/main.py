@@ -70,7 +70,7 @@ def main():
     assert reader_type is not None and hasattr(Readers, reader_type),\
         f"Cannot find reader {reader_type}"
     reader = getattr(Readers, reader_type).from_params(dataset_reader_params)
-    instances_train = reader.read(file_path=TRAIN_PATH)    
+    instances_train = reader.read(file_path=TRAIN_PATH)
     logger.info("Length of {0}: {1}".format(
         "Training Data", len(instances_train)))
 
@@ -121,11 +121,6 @@ def main():
     data_iterator = DataIterator.from_params(config.pop("iterator"))
     data_iterator.index_with(vocab)
 
-    visualize = config.pop("visualize", False)
-    visualizer = None
-    if visualize:
-        visualizer = html_visualizer(vocab, reader)
-
     logger.info("Data Iterators Done")
 
     # Create the model
@@ -140,6 +135,13 @@ def main():
         label_indexer=reader.get_label_indexer()
     )
     logger.info("Model Construction done")
+
+    visualize = config.pop("visualize", False)
+    visualizer = None
+    if visualize:
+        visualizer = html_visualizer(vocab, reader)
+
+    logger.info("Visualizer Done")
 
     # if load_config is not None:
     #     # Load the weights, as specified by the load_config

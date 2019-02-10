@@ -16,7 +16,6 @@ from allennlp.models.model import Model
 from allennlp.common.tqdm import Tqdm
 
 
-from AttentionSegmentation.model.metrics import ConfusionMatrix
 from AttentionSegmentation.model.attn2labels \
     import get_binary_preds_from_attns
 
@@ -239,115 +238,6 @@ class html_visualizer(object):
             colorized_predictions_to_webpage(
                 predictions, vis_page=filename)
         return predictions
-
-
-def plot_data_point(data_point, mode="hierarchical", **kwargs):
-    if mode == "hierarchical":
-        plot_hierarchical_attn(
-            **data_point, fontsize=12, **kwargs)
-    else:
-        raise NotImplementedError("Work in progress")
-
-
-def plot_hierarchical_attn(
-        sentences: List[str], sent_attn: List[float],
-        word_attns: List[List[float]], preds: List[str], golds: List[str],
-        sent_thresh: int = 15, max_sent_len: int = 10,
-        filename: Optional[str] = None,
-        label_probs: Optional[List[float]] = None, **kw):
-    """Plots the attention representation, given arguments
-
-    Arguments:
-        sentences (List[str]): The sentences
-        sent_attn (List[float]): The Sentence level attn
-        word_attns (List[List[float]]): The word level
-            attention
-        preds (List[str]): The predictions
-        golds (List[str]): The gold labels
-        sent_thresh (int): The number of sentences to print
-        max_sent_len (int): Max length of sentence to print
-        filename (Optional[str]): Save figure to this file
-        label_probs (Optional[List[float]]): Unused. Required for
-            consistency
-
-    """
-    plt.close()
-    num_sentences = len(sentences)
-    truncated_word_attns = []
-    truncated_sents = []
-    for sent, attns in zip(sentences, word_attns):
-        top_attn_indices = np.argsort(np.array(attns))[::-1][:sent_thresh - 1]
-        top_index = max(top_attn_indices)
-        truncated_sent = sent[
-            max(0, top_index - sent_thresh + 1): top_index + 1]
-        truncated_sents.append(truncated_sent)
-        truncated_attn = attns[
-            max(0, top_index - sent_thresh + 1): top_index + 1]
-        truncated_word_attns.append(truncated_attn)
-        max_sent_len = max(max_sent_len, len(truncated_sent))
-    attn_matrix = np.zeros((num_sentences, max_sent_len + 1))
-    attn_matrix[:, 0] = np.array(sent_attn[::-1])
-    for ix in range(0, len(sentences)):
-        iterator_end = min(
-            len(truncated_word_attns[ix]), attn_matrix.shape[-1] - 1)
-        for jx in range(0, iterator_end):
-            attn_matrix[num_sentences - ix - 1, jx + 1] = \
-                truncated_word_attns[ix][jx]
-    plt.figure(figsize=(24, 12))
-    title_string = "Attention Map:"
-    gold_string = " , ".join(golds)
-    pred_string = " , ".join(preds)
-    title_string = (
-        f"{title_string}        Predictions: {pred_string}"
-        f"        Gold Labels: {gold_string}"
-    )
-    plt.title(title_string)
-    c = plt.pcolor(
-        attn_matrix, edgecolors='k',
-        linewidths=4, cmap='Blues', vmin=0.0, vmax=1.0)
-    c.update_scalarmappable()
-    ax = c.axes
-    word_thresh = 6
-    fmt = f"%{word_thresh}s"
-    index = 0
-    reversed_sentences = truncated_sents[::-1]
-    for p, color, value in zip(
-            c.get_paths(), c.get_facecolors(), c.get_array()):
-        x, y = p.vertices[:-2, :].mean(0)
-        r, c = index // (max_sent_len + 1), index % (max_sent_len + 1)
-        if c > 0:
-            if np.all(color[:3] > 0.5):
-                color = (0.0, 0.0, 0.0)
-            else:
-                color = (1.0, 1.0, 1.0)
-            if c - 1 < len(reversed_sentences[r]):
-                text = reversed_sentences[r][c - 1][:word_thresh]
-                ax.text(
-                    x, y, fmt % text, ha="center", va="center",
-                    color=color, **kw)
-        index += 1
-    if filename is not None:
-        plt.savefig(filename)
-
-
-def plot_confusion_matrix(confusion_matrix: ConfusionMatrix,
-                          filename: Optional[str] = None):
-    plt.close()
-
-    gold_labels = confusion_matrix.labels
-    pred_labels = confusion_matrix.labels
-    df_cm = pd.DataFrame(
-        confusion_matrix.confusion_matrix, index=[i for i in gold_labels],
-        columns=[i for i in pred_labels]
-    )
-    plt.figure(figsize=(10, 7))
-    ax = sn.heatmap(df_cm, annot=True, fmt="3.1f")
-    ax.set(xlabel="Pred Labels", ylabel="Gold Labels")
-    plt.title("Confusion Matrix for Classification")
-    plt.tight_layout()
-    if filename is not None:
-        plt.savefig(filename)
-    return confusion_matrix
 
 
 def _attn_to_rgb(attn_weights, pred_tag, gold_tag):
