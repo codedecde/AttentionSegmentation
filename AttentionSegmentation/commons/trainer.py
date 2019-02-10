@@ -32,8 +32,9 @@ from allennlp.training.optimizers import Optimizer
 
 from AttentionSegmentation.commons.trainer_utils import is_sparse,\
     sparse_clip_norm, move_optimizer_to_cuda, TensorboardWriter
-from AttentionSegmentation.visualization.visualize_attns \
-    import html_visualizer
+# from AttentionSegmentation.visualization.visualize_attns \
+#     import html_visualizer
+from AttentionSegmentation.model.attn2labels import BasePredictionClass
 logger = logging.getLogger(__name__)
 
 TQDM_COLUMNS = 200
@@ -46,7 +47,7 @@ class Trainer(object):
                  iterator: DataIterator,
                  train_dataset: Iterable[Instance],
                  validation_dataset: Optional[Iterable[Instance]] = None,
-                 visualizer: Optional[html_visualizer] = None,
+                 segmenter: Optional[BasePredictionClass] = None,
                  patience: Optional[int] = None,
                  validation_metric: str = "-loss",
                  num_epochs: int = 20,
@@ -73,8 +74,8 @@ class Trainer(object):
             A ``Dataset`` to train on. The dataset should have already been indexed.
         validation_dataset : ``Dataset``, optional, (default = None).
             A ``Dataset`` to evaluate on. The dataset should have already been indexed.
-        visualizer : ``html_visualizer`` for visualization of attention. None
-            if we don't want to visualize
+        segmenter : ``BasePredictionClass`` for converting attention segmentation to labels.
+            None if we don't want to visualize
         patience : Optional[int] > 0, optional (default=None)
             Number of epochs to be patient before early stopping: the training is stopped
             after ``patience`` epochs with no improvement. If given, it must be ``> 0``.
@@ -115,12 +116,8 @@ class Trainer(object):
         self._optimizer = optimizer
         self._train_data = train_dataset
         self._validation_data = validation_dataset
-        self._visualizer = visualizer
+        self._segmenter = segmenter
         self._base_dir = base_dir
-        self._visualization_dirname = None
-        if self._visualizer is not None:
-            self._visualization_dirname = os.path.join(
-                base_dir, "visualization")
 
         if patience is None:  # no early stopping
             if validation_dataset:
@@ -492,20 +489,22 @@ class Trainer(object):
             self._save_checkpoint(
                 epoch, validation_metric_per_epoch, is_best=is_best_so_far)
             self._metrics_to_console(train_metrics, val_metrics)
-            # Now the visualization integration
-            if self._visualizer is not None and is_best_so_far:
-                filename = os.path.join(
-                    self._visualization_dirname, "validation.html")
-                logger.info(f"Writing validation visualization at {filename}")
-                predictions = self._visualizer.visualize_data(
+            # Now the predictions and visualization
+            if self._segmenter is not None and is_best_so_far:
+                visualization_file = os.path.join(
+                    self._base_dir, "visualization", "validation.html")
+                prediction_file = os.path.join(
+                    self._base_dir, "predictions.json")
+                logger.info(
+                    f"Writing validation visualization at {visualization_file}"
+                )
+                self._segmenter.get_predictions(
                     instances=self._validation_data,
                     model=self._model,
-                    filename=filename,
-                    cuda_device=self._iterator_device
-                )
-                prediction_file = os.path.join(self._base_dir, "predictions.json")
-                with open(prediction_file, "w") as f:
-                    json.dump(predictions, f, ensure_ascii=True, indent=4)
+                    cuda_device=self._iterator_device,
+                    prediction_file=prediction_file,
+                    visualization_file=visualization_file)
+                logger.info(f"Writing predictions to {prediction_file}")
 
             if self._learning_rate_scheduler:
                 # The LRScheduler API is agnostic to whether your schedule requires a validation metric -
@@ -721,7 +720,7 @@ class Trainer(object):
                  iterator: DataIterator,
                  train_data: Iterable[Instance],
                  validation_data: Optional[Iterable[Instance]],
-                 visualizer: Optional[html_visualizer],
+                 segmenter: Optional[BasePredictionClass],
                  params: Params) -> Dict[str, Any]:
         patience = params.pop_int("patience", None)
         validation_metric = params.pop("validation_metric", "-loss")
@@ -751,7 +750,7 @@ class Trainer(object):
         kwargs['iterator'] = iterator
         kwargs['train_dataset'] = train_data
         kwargs['validation_dataset'] = validation_data
-        kwargs['visualizer'] = visualizer
+        kwargs['segmenter'] = segmenter
         kwargs['patience'] = patience
         kwargs['validation_metric'] = validation_metric
         kwargs['num_epochs'] = num_epochs

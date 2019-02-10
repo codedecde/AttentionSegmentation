@@ -21,8 +21,9 @@ from AttentionSegmentation.commons.utils import \
     setup_output_dir, read_from_config_file
 from AttentionSegmentation.commons.model_utils import \
     construct_vocab, load_model_from_existing
-from AttentionSegmentation.visualization.visualize_attns import \
-    html_visualizer
+# from AttentionSegmentation.visualization.visualize_attns import \
+#     html_visualizer
+import AttentionSegmentation.model.attn2labels as SegmentationModels
 
 
 def get_arguments():
@@ -71,6 +72,7 @@ def main():
         f"Cannot find reader {reader_type}"
     reader = getattr(Readers, reader_type).from_params(dataset_reader_params)
     instances_train = reader.read(file_path=TRAIN_PATH)
+    instances_train = instances_train[:34]
     logger.info("Length of {0}: {1}".format(
         "Training Data", len(instances_train)))
 
@@ -78,6 +80,7 @@ def main():
     VAL_PATH = config.pop("validation_data_path")
     logger.info("Loading Validation Data from {0}".format(VAL_PATH))
     instances_val = reader.read(VAL_PATH)
+    instances_val = instances_val[:34]
     logger.info("Length of {0}: {1}".format(
         "Validation Data", len(instances_val)))
 
@@ -136,10 +139,17 @@ def main():
     )
     logger.info("Model Construction done")
 
-    visualize = config.pop("visualize", False)
-    visualizer = None
-    if visualize:
-        visualizer = html_visualizer(vocab, reader)
+    # visualize = config.pop("visualize", False)
+    # visualizer = None
+    # if visualize:
+    #     visualizer = html_visualizer(vocab, reader)
+    segmenter_params = config.pop("segmentation")
+    segment_class = segmenter_params.pop("type")
+    segmenter = getattr(SegmentationModels, segment_class).from_params(
+        vocab=vocab,
+        reader=reader,
+        params=segmenter_params
+    )
 
     logger.info("Visualizer Done")
 
@@ -161,7 +171,7 @@ def main():
         iterator=data_iterator,
         train_data=instances_train,
         validation_data=instances_val,
-        visualizer=visualizer,
+        segmenter=segmenter,
         params=config.pop("trainer")
     )
     trainer.train()

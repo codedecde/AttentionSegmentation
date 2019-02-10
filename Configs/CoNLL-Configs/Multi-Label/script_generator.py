@@ -106,7 +106,11 @@ for METHOD in METHODS:
         "padding_noise": 0.1,
         "batch_size": 32
       }},
-      "visualize": false,
+      "segmentation": {{
+        "type": "BasicBinaryPredictions",
+        "tol": 0.01,
+        "visualize": true
+      }},
       "trainer": {{
         "optimizer": "adam",
         "num_epochs": 50,
