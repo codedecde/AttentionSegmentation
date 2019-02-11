@@ -235,7 +235,9 @@ def countChunks(predictions, delimiter=None, raw=False, oTag="O"):
 
     return correctChunk, foundGuessed, foundCorrect, correctTags, tokenCounter
 
-def evaluate(correctChunk, foundGuessed, foundCorrect, correctTags, tokenCounter, latex=False):
+
+def evaluate(correctChunk, foundGuessed, foundCorrect, correctTags,
+             tokenCounter, latex=False, silent=False):
     # sum counts
     correctChunkSum = sum(correctChunk.values())
     foundGuessedSum = sum(foundGuessed.values())
@@ -249,35 +251,56 @@ def evaluate(correctChunk, foundGuessed, foundCorrect, correctTags, tokenCounter
     # print overall performance, and performance per chunk type
     if not latex:
         # compute overall precision, recall and FB1 (default values are 0.0)
-        precision, recall, FB1 = calcMetrics(correctChunkSum, foundGuessedSum, foundCorrectSum)
+        precision, recall, FB1 = calcMetrics(
+            correctChunkSum, foundGuessedSum, foundCorrectSum)
         # print overall performance
-        print("processed %i tokens with %i phrases; " % (tokenCounter, foundCorrectSum), end='')
-        print("found: %i phrases; correct: %i.\n" % (foundGuessedSum, correctChunkSum), end='')
+        if not silent:
+            print("processed %i tokens with %i phrases; " % (
+                  tokenCounter, foundCorrectSum), end='')
+            print("found: %i phrases; correct: %i.\n" % (
+                  foundGuessedSum, correctChunkSum), end='')
         if tokenCounter:
-            print("accuracy: %6.2f%%; " % (100*correctTags/tokenCounter), end='')
-            print("precision: %6.2f%%; recall: %6.2f%%; FB1: %6.2f" %
-                    (precision, recall, FB1))
+            if not silent:
+                print("accuracy: %6.2f%%; " %
+                      (100 * correctTags / tokenCounter), end='')
+            if not silent:
+                print("precision: %6.2f%%; recall: %6.2f%%; FB1: %6.2f" %
+                      (precision, recall, FB1))
 
         for i in sortedTypes:
-            precision, recall, FB1 = calcMetrics(correctChunk[i], foundGuessed[i], foundCorrect[i])
-            print("%17s: " %i , end='')
-            print("precision: %6.2f%%; recall: %6.2f%%; FB1: %6.2f" %
-                    (precision, recall, FB1), end='')
-            print("  %d" % foundGuessed[i])
+            precision, recall, FB1 = calcMetrics(
+                correctChunk[i], foundGuessed[i], foundCorrect[i])
+            if not silent:
+                print("%17s: " % i, end='')
+            if not silent:
+                print("precision: %6.2f%%; recall: %6.2f%%; FB1: %6.2f" %
+                      (precision, recall, FB1), end='')
+            if not silent:
+                print("  %d" % foundGuessed[i])
 
     # generate LaTeX output for tables like in
     # http://cnts.uia.ac.be/conll2003/ner/example.tex
     else:
-        print("        & Precision &  Recall  & F\$_{\\beta=1} \\\\\\hline", end='')
+        if not silent:
+            print(
+                "        & Precision &  Recall  & F\$_{\\beta=1} \\\\\\hline",
+                end='')
         for i in sortedTypes:
-            precision, recall, FB1 = calcMetrics(correctChunk[i], foundGuessed[i], foundCorrect[i])
-            print("\n%-7s &  %6.2f\\%% & %6.2f\\%% & %6.2f \\\\" %
-                 (i,precision,recall,FB1), end='')
-        print("\\hline")
+            precision, recall, FB1 = calcMetrics(
+                correctChunk[i], foundGuessed[i], foundCorrect[i])
+            if not silent:
+                print("\n%-7s &  %6.2f\\%% & %6.2f\\%% & %6.2f \\\\" %
+                      (i, precision, recall, FB1), end='')
+        if not silent:
+            print("\\hline")
 
-        precision, recall, FB1 = calcMetrics(correctChunkSum, foundGuessedSum, foundCorrectSum)
-        print("Overall &  %6.2f\\%% & %6.2f\\%% & %6.2f \\\\\\hline" %
-              (precision,recall,FB1))
+        precision, recall, FB1 = calcMetrics(
+            correctChunkSum, foundGuessedSum, foundCorrectSum)
+        if not silent:
+            print("Overall &  %6.2f\\%% & %6.2f\\%% & %6.2f \\\\\\hline" %
+                  (precision, recall, FB1))
+    return (precision, recall, FB1)
+
 
 if __name__ == "__main__":
     args = parse_args()
