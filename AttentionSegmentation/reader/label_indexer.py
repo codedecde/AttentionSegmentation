@@ -22,6 +22,12 @@ class LabelIndexer(object):
         self.ix2tags = {self.tags2ix[t]: t for t in self.tags2ix}
         self.label_namespace = label_namespace
 
+    def get_tag(self, ix: int):
+        return self.ix2tags[ix] if ix in self.ix2tags else "O"
+
+    def get_index(self, tag: str):
+        return self.tags2ix[tag] if tag in self.tags2ix else len(self.tags2ix)
+
     def get_num_tags(self) -> int:
         # self.tags2ix does not contain the 'O' tag
         return len(self.tags2ix) + 1

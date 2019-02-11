@@ -117,7 +117,11 @@ for TAG in tag_list:
             "padding_noise": 0.1,
             "batch_size": 32
           }},
-          "visualize": true,
+          "segmentation": {{
+            "type": "BasicBinaryPredictions",
+            "tol": 0.01,
+            "visualize": true
+          }},
           "trainer": {{
             "optimizer": "adam",
             "num_epochs": 50,

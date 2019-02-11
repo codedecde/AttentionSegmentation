@@ -35,6 +35,7 @@ import AttentionSegmentation.model.classifiers as Models
 from AttentionSegmentation.model.attn2labels import \
     get_binary_preds_from_attns
 import AttentionSegmentation.reader as Readers
+import AttentionSegmentation.model.attn2labels as SegmentationModels
 
 # from Model.predicted_instances\
 #     import HANPredictedInstance, AttentionClassifierPredictedInstance
@@ -45,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 
 class BaseModelRunner(object):
-    """An Abstract class, providinf a common
+    """An Abstract class, providing a common
     way of interfacing with the Classifiers.
 
     Implements commonly used functionalities, like
@@ -110,15 +111,14 @@ class BaseModelRunner(object):
         self._model.load_state_dict(model_state)
         logger.info("Model Loaded")
         self._num_labels = self._reader.get_label_indexer().get_num_tags()
-
-        # Build Iterator
-        logger.info("Loading iterator")
-        # Use a basic iterator
-        # since bucket iterator changes the ordering of data
-        # even when shuffle = False
-        self._data_iterator = BasicIterator(batch_size=32)
-        self._data_iterator.index_with(self._vocab)
-        logger.info("iterator loaded")
+        segmenter_params = self._config.pop("segmentation")
+        segment_class = segmenter_params.pop("type")
+        self._segmenter = getattr(
+            SegmentationModels, segment_class).from_params(
+                vocab=self._vocab,
+                reader=reader,
+                params=segmenter_params
+        )
         trainer_params = self._config.pop("trainer", None)
         self._cuda_device = -1
         if trainer_params is not None and torch.cuda.is_available():
@@ -126,12 +126,8 @@ class BaseModelRunner(object):
         if self._cuda_device != -1:
             self._model.cuda(self._cuda_device)
 
-    def _get_text_from_instance(self, instance: Instance) -> List[str]:
-        """Helper function to extract text from an instance
-        """
-        return list(map(lambda x: x.text, instance.fields['tokens'].tokens))
 
-    def _process_file(self, filename: str):
+    def generate_preds_from_file(self, filename: str):
         raise NotImplementedError("Child class has to implement this")
 
     @classmethod
@@ -178,75 +174,24 @@ class BasicAttentionModelRunner(BaseModelRunner):
             vocab_dir=vocab_dir, base_embed_dir=base_embed_dir)
 
     @overrides
-    def _process_file(self, filename: str, html_file: str = "", tol=0.01):
+    def generate_preds_from_file(
+        self,
+        filename: str, prediction_file: str = "",
+        visualization_file: str = ""):
         """
             Generates predictions from a file
         """
         instances = self._reader.read(filename)
-        indexer = self._reader.get_label_indexer()
-        # FIXME: Currently supporting binary classification
-        index_tag = list(indexer.tags2ix.keys())[0]
-        iterator = self._data_iterator(
-            instances,
-            num_epochs=1,
-            shuffle=False,
-            cuda_device=self._cuda_device,
-            for_training=False
-        )
         self._model.eval()
-        num_batches = self._data_iterator.get_num_batches(instances)
-        inference_generator_tqdm = Tqdm.tqdm(iterator, total=num_batches)
-        predictions = []
-        index = 0
-        index_labeler = self._reader.get_label_indexer()
-        correct_counts = 0.
-        for batch in inference_generator_tqdm:
-            # Currently I don't support multi-gpu data parallel
-            output_dict = self._model.decode(self._model(**batch))
-            for ix in range(len(output_dict["preds"])):
-                text = self._get_text_from_instance(instances[index])
-                label_num = instances[index].fields['labels'].labels[0]
-                # FIXME: Currently supporting binary classification
-                assert len(instances[index].fields['labels'].labels) == 1
-                pred = output_dict["preds"][ix]
-                attn = output_dict["attentions"][ix]
-                gold = "O"
-                gold_labels = instances[index].fields['tags'].labels
-                gold_labels = indexer.extract_relevant(gold_labels)
-                if pred == "O":
-                    pred_labels = ["O" for _ in range(len(attn))]
-                else:
-                    pred_labels = get_binary_preds_from_attns(
-                        attn, index_tag, tol
-                    )
-                assert len(attn) == len(gold_labels), \
-                    "Error. Found lengths {0}, expected {1}".format(
-                        len(attn), len(gold_labels)
-                )
-                if label_num < len(index_labeler.ix2tags):
-                    gold = index_labeler.ix2tags[label_num]
-                if pred == gold:
-                    correct_counts += 1.
-                prediction = {
-                    "text": text,
-                    "pred": pred,
-                    "attn": attn,
-                    "gold": gold,
-                    "pred_labels": pred_labels,
-                    "gold_labels": gold_labels
-                }
-                predictions.append(prediction)
-                index += 1
-        if html_file != "":
-            colorized_predictions_to_webpage(
-                predictions, vis_page=html_file)
-        print("Accuracy: ", 100 * correct_counts / index)
+        predictions = self._segmenter.get_predictions(
+            instances=instances,
+            model=self._model,
+            cuda_device=self._cuda_device,
+            prediction_file=prediction_file,
+            visualization_file=visualization_file,
+            verbose=True)
         return predictions
 
 
 if __name__ == "__main__":
-    base_dir = "./Experiments/CoNLL/HAN-ELMO-Experiments/run-20/"
-    runner = BasicAttentionModelRunner.load_from_dir(base_dir)
-    base_valid_dir = "./Data/CoNLLData/"
-    valid_file = f"{base_valid_dir}/valid.txt"
-    runner._process_file(valid_file, "./WebOuts/visualize.html")
+    pass
