@@ -503,7 +503,8 @@ class Trainer(object):
                     model=self._model,
                     cuda_device=self._iterator_device,
                     prediction_file=prediction_file,
-                    visualization_file=visualization_file)
+                    visualization_file=visualization_file,
+                    verbose=True)
                 logger.info(f"Writing predictions to {prediction_file}")
 
             if self._learning_rate_scheduler:

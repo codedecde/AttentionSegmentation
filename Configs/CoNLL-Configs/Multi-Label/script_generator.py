@@ -50,6 +50,9 @@ for METHOD in METHODS:
                 "type": "characters",
                 "namespace": "token_chars"
             }}
+         }},
+         "elmo": {{
+              "type": "elmo_characters"
          }}
       }},
       "train_data_path": "./Data/CoNLLData/train.txt",
@@ -64,6 +67,7 @@ for METHOD in METHODS:
             "type": "embedding",
             "vocab_namespace": "token_ids",
             "embedding_dim": 300,
+            "pretrained_file": "./Data/embeddings/GloveEmbeddings/glove.6B.300d.txt.gz",
             "trainable": true
           }},
           "chars": {{
@@ -80,11 +84,18 @@ for METHOD in METHODS:
               "dropout": 0.25,
               "bidirectional": true
             }}
+          }},
+          "elmo": {{
+              "type": "elmo_token_embedder",
+              "options_file": "./Data/embeddings/ELMOEmbeddings/elmo_2x4096_512_2048cnn_2xhighway_options.json",
+              "weight_file": "./Data/embeddings/ELMOEmbeddings/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5",
+              "do_layer_norm": false,
+              "dropout": 0.0
           }}
         }},
         "encoder_word": {{
           "type": "gru",
-          "input_size": 460,
+          "input_size": 1484,
           "hidden_size": 150,
           "num_layers": 1,
           "dropout": 0.5,
@@ -107,9 +118,9 @@ for METHOD in METHODS:
         "batch_size": 32
       }},
       "segmentation": {{
-        "type": "BasicBinaryPredictions",
+        "type": "BasicMultiPredictions",
         "tol": 0.01,
-        "visualize": true
+        "visualize": false
       }},
       "trainer": {{
         "optimizer": "adam",

@@ -439,10 +439,10 @@ class MultiClassifier(Model):
         for ix in range(lengths.size):
             non_zero_indices = np.nonzero(predictions[ix])[0]
             pred_list = []
-            for ix in range(non_zero_indices.shape[0]):
+            for kx in range(non_zero_indices.shape[0]):
                 pred_list.append(
                     self.label_indexer.get_tag(
-                        non_zero_indices[ix]
+                        non_zero_indices[kx]
                     )
                 )
 
@@ -452,7 +452,7 @@ class MultiClassifier(Model):
             attention = OrderedDict()
             for jx in range(attentions[ix].shape[-1]):
                 tag = self.label_indexer.get_tag(jx)
-                attention[tag] = attentions[ix, :lengths[ix], jx]
+                attention[tag] = attentions[ix, :lengths[ix], jx].tolist()
             decoded_output["attentions"].append(attention)
         return decoded_output
 

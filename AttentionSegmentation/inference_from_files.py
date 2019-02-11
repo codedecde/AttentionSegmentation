@@ -1,8 +1,10 @@
 from __future__ import absolute_import
-from AttentionSegmentation.model.inference import BasicAttentionModelRunner
 import argparse
 import sys
 import json
+
+from AttentionSegmentation.model.inference import BasicAttentionModelRunner
+from AttentionSegmentation.commons.utils import setup_logger
 
 
 def get_arguments():
@@ -26,27 +28,12 @@ def get_arguments():
 
 
 if __name__ == "__main__":
+    setup_logger()
     args = get_arguments()
     base_dir = args.base_dir
     runner = BasicAttentionModelRunner.load_from_dir(base_dir)
     valid_file = args.val_file
-    output_file = args.html_file
-    # "./WebOuts/visualize.html"
-    predictions = runner._process_file(valid_file, output_file, tol=args.tol)
-    if args.pred_file != "":
-        with open(args.pred_file, "w") as f:
-            json.dump(predictions, f, indent=4, ensure_ascii=True)
-        fname = args.pred_file.split(".")[0] + ".txt"
-        pred_list = []
-        for pred in predictions:
-            txt = "\n".join(
-                [
-                    f"{tmp_txt} {gold_label} {pred_label}"
-                    for tmp_txt, gold_label, pred_label in zip(
-                        pred["text"], pred["gold_labels"], pred["pred_labels"]
-                    )
-                ]
-            )
-            pred_list.append(txt)
-        with open(fname, "w") as f:
-            f.write("\n\n".join(pred_list))
+    visualization_file = args.html_file
+    prediction_file = args.pred_file
+    predictions = runner.generate_preds_from_file(
+        valid_file, prediction_file, visualization_file)

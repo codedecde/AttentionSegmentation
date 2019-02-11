@@ -72,7 +72,7 @@ def main():
         f"Cannot find reader {reader_type}"
     reader = getattr(Readers, reader_type).from_params(dataset_reader_params)
     instances_train = reader.read(file_path=TRAIN_PATH)
-    instances_train = instances_train[:34]
+    instances_train = instances_train
     logger.info("Length of {0}: {1}".format(
         "Training Data", len(instances_train)))
 
@@ -80,7 +80,7 @@ def main():
     VAL_PATH = config.pop("validation_data_path")
     logger.info("Loading Validation Data from {0}".format(VAL_PATH))
     instances_val = reader.read(VAL_PATH)
-    instances_val = instances_val[:34]
+    instances_val = instances_val
     logger.info("Length of {0}: {1}".format(
         "Validation Data", len(instances_val)))
 
@@ -151,7 +151,7 @@ def main():
         params=segmenter_params
     )
 
-    logger.info("Visualizer Done")
+    logger.info("Segmenter Done")
 
     # if load_config is not None:
     #     # Load the weights, as specified by the load_config
