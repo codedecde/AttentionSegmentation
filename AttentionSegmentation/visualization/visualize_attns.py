@@ -3,6 +3,7 @@ from typing import List, Optional, Dict
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+from collections import OrderedDict
 import seaborn as sn
 import pdb
 import json
@@ -16,9 +17,8 @@ from allennlp.models.model import Model
 from allennlp.common.tqdm import Tqdm
 
 
-from AttentionSegmentation.model.metrics import ConfusionMatrix
-from AttentionSegmentation.model.attn2labels \
-    import get_binary_preds_from_attns
+# from AttentionSegmentation.model.attn2labels \
+#     import get_binary_preds_from_attns
 
 colors2rgb = {}
 
@@ -26,8 +26,164 @@ colors2rgb['purple'] = '#712f79'  # Pred tag, gold no tag
 colors2rgb['brickRed'] = '#d2405f'  # Pred no tag, gold tag
 colors2rgb['yellowGreen'] = '#e0ff4f'  # Both tag
 
+tag2color = OrderedDict({
+    "PER": "#e88a1a",
+    "ORG": "#005542",
+    "LOC": "#10316b",
+    "MISC": "#f6b8d1"
+})
+dark_backgrounds = set(["ORG", "LOC"])
+
+
+def strip(string):
+    return re.sub(".*-", "", string)
+
+
+def get_html_from_pred(pred):
+    writebuf = []
+    for ix in range(len(pred["text"])):
+        pred_label = strip(pred["pred_labels"][ix])
+        gold_label = strip(pred["gold_labels"][ix])
+        correct = False
+        if pred_label == gold_label:
+            correct = True
+        word = pred["text"][ix]
+        html = ['<div class="tooltip">']
+        attn_at_point = [(pred["attn"][t][ix], t) for t in pred["attn"]
+                         if t in pred["pred"]]
+        if len(attn_at_point) == 0:
+            attn_weight, tag = max([(pred["attn"][t][ix], t) for t in pred["attn"]])
+            attn_hex = str(hex(int(abs(attn_weight) * 255)))[2:]
+            # we use a neutral gray color for this case
+            attn_color = "#3c415e" + attn_hex
+        else:
+            attn_weight, tag = max(attn_at_point)
+            attn_hex = str(hex(int(abs(attn_weight) * 255)))[2:]
+            attn_color = tag2color[tag] + attn_hex
+        html.append('<span style="padding:2px">')
+        if correct and pred_label != "O":
+            html.append('<underline style=text-decoration-color:#8dde28>')
+        else:
+            if pred_label != "O":
+                color = tag2color[pred_label]
+                html.append(f'<overline style="text-decoration-color:{color}">')
+            if gold_label != "O":
+                color = tag2color[gold_label]
+                html.append(f'<underline style="text-decoration-color:{color}">')
+        html.append(f"<span style=background-color:{attn_color}>")
+        html.append(word)
+        html.append("</span>")
+        if correct and pred != "O":
+            html.append('</underline>')
+        else:
+            if gold_label != "O":
+                html.append('</underline>')
+            if pred_label != "O":
+                html.append("</overline>")
+        html.append('</span>')
+        html.append('<span class="tooltiptext">')
+        for tag in pred["attn"]:
+            attnval = "{0:2.2f}".format(pred["attn"][tag][ix])
+            string = "{0:>4s}: {1:4s}".format(tag, attnval)
+            html.append(f"{string} <br>")
+        html.append('</span>')
+        html.append('</div>')
+        writebuf.append("".join(html))
+    writebuf.append(" ")
+    writebuf.append("[")
+    for t in pred["pred"]:
+        if t in pred["gold"]:
+            writebuf.append(f"<correct>{t} </correct>")
+        else:
+            writebuf.append(f"<incorrect>{t} </incorrect>")
+    writebuf.append("]")
+    writebuf.append(" ")
+    writebuf.append("[")
+    for t in pred["gold"]:
+        if t in pred["pred"]:
+            writebuf.append(f"<correct>{t} </correct>")
+        else:
+            writebuf.append(f"<incorrect>{t} </incorrect>")
+    writebuf.append("]")
+    return "".join(writebuf)
+
 
 def colorized_predictions_to_webpage(
+        predictions, webpage="visualize.html"):
+    header = (
+        '<html>\n'
+        '<head>\n'
+        '<style>\n'
+        ' correct { \n'
+        '     color: #8dde28; \n'
+        '     padding-right: 5px; \n'
+        '     padding-left: 5px \n'
+        ' }\n'
+        ' incorrect { \n'
+        '     color: #cf3030; \n'
+        '     padding-right: 5px; \n'
+        '     padding-left: 5px \n'
+        ' }\n'
+        ' overline {\n'
+        '    text-decoration: overline;\n'
+        ' }\n'
+        ' underline {\n'
+        '    text-decoration: underline;\n'
+        ' }\n'
+        ' body { color: color:#000000}\n'
+        ' .tooltip { \n'
+        '     position: relative; \n'
+        '     display: inline-block; \n'
+        ' }\n'
+        ' .tooltip .tooltiptext {  \n'
+        '     visibility: hidden;  \n'
+        '     width: 120px;  \n'
+        '     background-color: black; \n'
+        '     color: #fff; \n'
+        '     text-align: center;  \n'
+        '     border-radius: 6px;  \n'
+        '     padding: 5px 0;  \n'
+        '     position: absolute;  \n'
+        '     z-index: 1;  \n'
+        '     top: 150%; \n'
+        '     left: 50%; \n'
+        '     margin-left: -60px;  \n'
+        ' }\n'
+        ' .tooltip .tooltiptext::after { \n'
+        '     content: " ";    \n'
+        '     position: absolute;  \n'
+        '     bottom: 100%;\n'
+        '     left: 50%;   \n'
+        '     margin-left: -5px;   \n'
+        '     border-width: 5px;   \n'
+        '     border-style: solid; \n'
+        '     border-color: transparent transparent black transparent; \n'
+        ' }\n'
+        ' .tooltip:hover .tooltiptext {  \n'
+        '     visibility: visible; \n'
+        ' }\n'
+        '</style>\n'
+        '</head>\n'
+    )
+    body = ["<body>"]
+    for tag in tag2color:
+        color = tag2color[tag]
+        if tag in dark_backgrounds:
+            text_background = "white"
+        else:
+            text_background = "black"
+        text = f'<span style="background-color:{color}; color: {text_background}">{tag}</span> '
+        body.append(text)
+    body.append("<br><br>")
+    for pred in predictions:
+        html = get_html_from_pred(pred)
+        body.append(f"{html}<br><br>")
+    footer = ["</body></html>"]
+    with open(webpage, "w") as f:
+        f.write("\n".join([header] + body + footer))
+
+
+def colorized_predictions_to_webpage_binary(
         predictions, vis_page="visualize.html"):
     """This generates the visualization web page from predictions
 
@@ -35,9 +191,10 @@ def colorized_predictions_to_webpage(
         predictions (List[Dict[str, Any]]): A list of predictions.
             Each prediction contains:
                 * text (List[str]): list of tokens
-                * pred (str): The predicted token
-                * gold (str): The gold token
-                * attn (List[float]): The list of float tokens
+                * pred (List[str]): The predicted tokens
+                * gold (List[str]): The gold tokens
+                * attn (Dict[str, List[float]]): The attentions,
+                    by tags
                 * pred_labels (List[str]) : The list of predicted
                     labels
                 * gold_labels (List[str]) : The list of gold labels
@@ -119,9 +276,9 @@ def colorized_predictions_to_webpage(
         f.write(header)
         for pred in predictions:
             txt = " ".join(pred["text"])
-            attn_weights = pred["attn"]
-            pred_label = pred["pred"]
-            gold_label = pred["gold"]
+            attn_weights = list(pred["attn"].values())[0]
+            pred_label = pred["pred"][0]
+            gold_label = pred["gold"][0]
             pred_tags = pred["pred_labels"]
             gold_tags = pred["gold_labels"]
             html = colorize_text(txt, attn_weights, pred_tags, gold_tags)
@@ -144,210 +301,6 @@ def colorized_predictions_to_webpage(
         f.write(footer)
 
 
-class html_visualizer(object):
-    """This collects the different visualization methods for easy visualization
-    """
-
-    def __init__(self, vocab, reader, tol=0.01):
-        self._vocab = vocab
-        self._iterator = BasicIterator(batch_size=32)
-        self._iterator.index_with(self._vocab)
-        self._reader = reader
-        self._indexer = self._reader.get_label_indexer()
-        self._tol = tol
-
-    def _get_text_from_instance(self, instance: Instance) -> List[str]:
-        """Helper function to extract text from an instance
-        """
-        return list(map(lambda x: x.text, instance.fields['tokens'].tokens))
-
-    def visualize_data(
-        self,
-        instances: List[Instance],
-        model: Model,
-        filename: str,
-        cuda_device: int = -1
-    )-> List[Dict]:
-        """This function helps visualize the attention maps
-        We use a basic itereator, since a bucket iterator shuffles
-        data, even for shuffle=False
-
-        Arguments:
-            data (List[Instance]) : The list of instances for inference
-            filename (str) : The html file to output to
-            cuda_device (int) : The GPU being used
-
-        Returns:
-            predictions (List[Dict]) : The predictions. Each contains the
-                following keys
-                * text: The token
-                * pred: The predicted label
-                * gold: The gold label
-                * pred_labels : The predicted labels for segmentation
-                * gold_labels : The gold labels for segmentation
-
-        """
-        iterator = self._iterator(
-            instances,
-            num_epochs=1,
-            shuffle=False,
-            cuda_device=cuda_device,
-            for_training=False
-        )
-        model.eval()
-        num_batches = self._iterator.get_num_batches(instances)
-        inference_generator_tqdm = Tqdm.tqdm(iterator, total=num_batches)
-        predictions = []
-        index = 0
-        index_labeler = self._reader.get_label_indexer()
-        index_tag = list(self._indexer.tags2ix.keys())[0]
-        correct_counts = 0.
-        for batch in inference_generator_tqdm:
-            # Currently I don't support multi-gpu data parallel
-            output_dict = model.decode(model(**batch))
-            for ix in range(len(output_dict["preds"])):
-                text = self._get_text_from_instance(instances[index])
-                label_num = instances[index].fields['labels'].labels[0]
-                # FIXME: Currently supporting binary classification
-                assert len(instances[index].fields['labels'].labels) == 1
-                pred = output_dict["preds"][ix]
-                attn = output_dict["attentions"][ix]
-                gold = "O"
-                gold_labels = instances[index].fields['tags'].labels
-                gold_labels = self._indexer.extract_relevant(gold_labels)
-                if pred == "O":
-                    pred_labels = ["O" for _ in range(len(attn))]
-                else:
-                    pred_labels = get_binary_preds_from_attns(
-                        attn, index_tag, self._tol
-                    )
-                if label_num < len(index_labeler.ix2tags):
-                    gold = index_labeler.ix2tags[label_num]
-                if pred == gold:
-                    correct_counts += 1.
-                prediction = {
-                    "text": text,
-                    "pred": pred,
-                    "attn": attn,
-                    "gold": gold,
-                    "pred_labels": pred_labels,
-                    "gold_labels": gold_labels
-                }
-                predictions.append(prediction)
-                index += 1
-        if filename != "":
-            colorized_predictions_to_webpage(
-                predictions, vis_page=filename)
-        return predictions
-
-
-def plot_data_point(data_point, mode="hierarchical", **kwargs):
-    if mode == "hierarchical":
-        plot_hierarchical_attn(
-            **data_point, fontsize=12, **kwargs)
-    else:
-        raise NotImplementedError("Work in progress")
-
-
-def plot_hierarchical_attn(
-        sentences: List[str], sent_attn: List[float],
-        word_attns: List[List[float]], preds: List[str], golds: List[str],
-        sent_thresh: int = 15, max_sent_len: int = 10,
-        filename: Optional[str] = None,
-        label_probs: Optional[List[float]] = None, **kw):
-    """Plots the attention representation, given arguments
-
-    Arguments:
-        sentences (List[str]): The sentences
-        sent_attn (List[float]): The Sentence level attn
-        word_attns (List[List[float]]): The word level
-            attention
-        preds (List[str]): The predictions
-        golds (List[str]): The gold labels
-        sent_thresh (int): The number of sentences to print
-        max_sent_len (int): Max length of sentence to print
-        filename (Optional[str]): Save figure to this file
-        label_probs (Optional[List[float]]): Unused. Required for
-            consistency
-
-    """
-    plt.close()
-    num_sentences = len(sentences)
-    truncated_word_attns = []
-    truncated_sents = []
-    for sent, attns in zip(sentences, word_attns):
-        top_attn_indices = np.argsort(np.array(attns))[::-1][:sent_thresh - 1]
-        top_index = max(top_attn_indices)
-        truncated_sent = sent[
-            max(0, top_index - sent_thresh + 1): top_index + 1]
-        truncated_sents.append(truncated_sent)
-        truncated_attn = attns[
-            max(0, top_index - sent_thresh + 1): top_index + 1]
-        truncated_word_attns.append(truncated_attn)
-        max_sent_len = max(max_sent_len, len(truncated_sent))
-    attn_matrix = np.zeros((num_sentences, max_sent_len + 1))
-    attn_matrix[:, 0] = np.array(sent_attn[::-1])
-    for ix in range(0, len(sentences)):
-        iterator_end = min(
-            len(truncated_word_attns[ix]), attn_matrix.shape[-1] - 1)
-        for jx in range(0, iterator_end):
-            attn_matrix[num_sentences - ix - 1, jx + 1] = \
-                truncated_word_attns[ix][jx]
-    plt.figure(figsize=(24, 12))
-    title_string = "Attention Map:"
-    gold_string = " , ".join(golds)
-    pred_string = " , ".join(preds)
-    title_string = (
-        f"{title_string}        Predictions: {pred_string}"
-        f"        Gold Labels: {gold_string}"
-    )
-    plt.title(title_string)
-    c = plt.pcolor(
-        attn_matrix, edgecolors='k',
-        linewidths=4, cmap='Blues', vmin=0.0, vmax=1.0)
-    c.update_scalarmappable()
-    ax = c.axes
-    word_thresh = 6
-    fmt = f"%{word_thresh}s"
-    index = 0
-    reversed_sentences = truncated_sents[::-1]
-    for p, color, value in zip(
-            c.get_paths(), c.get_facecolors(), c.get_array()):
-        x, y = p.vertices[:-2, :].mean(0)
-        r, c = index // (max_sent_len + 1), index % (max_sent_len + 1)
-        if c > 0:
-            if np.all(color[:3] > 0.5):
-                color = (0.0, 0.0, 0.0)
-            else:
-                color = (1.0, 1.0, 1.0)
-            if c - 1 < len(reversed_sentences[r]):
-                text = reversed_sentences[r][c - 1][:word_thresh]
-                ax.text(
-                    x, y, fmt % text, ha="center", va="center",
-                    color=color, **kw)
-        index += 1
-    if filename is not None:
-        plt.savefig(filename)
-
-
-def plot_confusion_matrix(confusion_matrix: ConfusionMatrix,
-                          filename: Optional[str] = None):
-    plt.close()
-
-    gold_labels = confusion_matrix.labels
-    pred_labels = confusion_matrix.labels
-    df_cm = pd.DataFrame(
-        confusion_matrix.confusion_matrix, index=[i for i in gold_labels],
-        columns=[i for i in pred_labels]
-    )
-    plt.figure(figsize=(10, 7))
-    ax = sn.heatmap(df_cm, annot=True, fmt="3.1f")
-    ax.set(xlabel="Pred Labels", ylabel="Gold Labels")
-    plt.title("Confusion Matrix for Classification")
-    plt.tight_layout()
-    if filename is not None:
-        plt.savefig(filename)
-    return confusion_matrix
 
 
 def _attn_to_rgb(attn_weights, pred_tag, gold_tag):

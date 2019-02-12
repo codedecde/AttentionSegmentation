@@ -3,7 +3,7 @@
 import os
 import re
 
-BASE_DIR = os.path.join("Configs/CoNLL-Configs/No-Numerals")
+BASE_DIR = os.path.join("Configs/CoNLL-Configs/Multi-Label")
 CONF_DIR = os.path.join(BASE_DIR, "Configs")
 SCRIPT_DIR = os.path.join(BASE_DIR, "Scripts")
 
@@ -12,9 +12,9 @@ os.makedirs(CONF_DIR, exist_ok=True)
 os.makedirs(SCRIPT_DIR, exist_ok=True)
 
 NUM_SCRIPTS = 4
-tag_list = ["LOC", "PER", "ORG", "MISC"]
+METHODS = ["binary"]
 # drop_list = [0.2, 0.4, 0.5, 0.6, 0.8]
-TOTAL = len(tag_list)
+TOTAL = len(METHODS)
 
 num_per_script = -(-TOTAL // NUM_SCRIPTS)
 
@@ -28,17 +28,17 @@ config_count = 0
 DROPOUT = 0.
 TEMP = 1.
 
-for TAG in tag_list:
+for METHOD in METHODS:
     raw = f"""
     {{
-      "base_output_dir": "{SCRATCH}/Experiments/CoNLL/No-Numerals/{TAG}",
+      "base_output_dir": "{SCRATCH}/Experiments/CoNLL/Multi-Label/{METHOD}",
       "dataset_reader": {{
         "type": "WeakConll2003DatasetReader",
         "tag_label": "ner",
         "convert_numbers": true,
         "label_indexer": {{
             "label_namespace": "labels",
-            "tags": ["{TAG}"]
+            "tags": ["LOC", "ORG", "MISC", "PER"]
         }},
         "token_indexers": {{
             "tokens": {{
@@ -51,16 +51,17 @@ for TAG in tag_list:
                 "namespace": "token_chars"
             }},
             "elmo": {{
-                 "type": "elmo_characters"
+                  "type": "elmo_characters"
             }}
-         }}
+         }},
       }},
       "train_data_path": "./Data/CoNLLData/train.txt",
       "validation_data_path": "./Data/CoNLLData/valid.txt",
       "test_data_path": "./Data/CoNLLData/test.txt",
       "evaluate_on_test": true,
       "model": {{
-        "type": "Classifier",
+        "type": "MultiClassifier",
+        "method": "{METHOD}",
         "text_field_embedder": {{
           "tokens": {{
             "type": "embedding",
@@ -117,9 +118,9 @@ for TAG in tag_list:
         "batch_size": 32
       }},
       "segmentation": {{
-        "type": "BasicBinaryPredictions",
+        "type": "BasicMultiPredictions",
         "tol": 0.01,
-        "visualize": true
+        "visualize": false
       }},
       "trainer": {{
         "optimizer": "adam",
@@ -138,7 +139,7 @@ for TAG in tag_list:
     """
     # Write the config
     temp_txt = re.sub("\.", "_", str(TEMP))
-    config_file = os.path.join(CONF_DIR, f"config_tag_{TAG}.json")
+    config_file = os.path.join(CONF_DIR, f"config.json")
     with open(config_file, "w") as f:
         f.write(raw)
     script_no = config_count // num_per_script
@@ -148,5 +149,6 @@ for TAG in tag_list:
 # Now write the scripts
 for ix in range(len(scripts)):
     script_file = os.path.join(SCRIPT_DIR, f"script_{ix}.sh")
-    with open(script_file, "w") as f:
-        f.write("\n".join(scripts[ix]))
+    if len(scripts[ix]) > 1:
+        with open(script_file, "w") as f:
+            f.write("\n".join(scripts[ix]))

@@ -28,6 +28,9 @@ import argparse
 import sys
 from collections import defaultdict
 import pdb
+import logging
+
+logger = logging.getLogger(__name__)
 
 # sanity check
 def parse_args():
@@ -175,8 +178,8 @@ def countChunks(predictions, delimiter=None, raw=False, oTag="O"):
     tokenCounter = 0     # token counter (ignores sentence breaks)
     correctTags = 0      # number of correct chunk tags
 
-    lastType = None # temporary storage for detecting duplicates
-    inCorrect = False # currently processed chunk is correct until now
+    lastType = None  # temporary storage for detecting duplicates
+    inCorrect = False  # currently processed chunk is correct until now
     lastCorrect, lastCorrectType = "O", None    # previous chunk tag in corpus
     lastGuessed, lastGuessedType = "O", None  # previously identified chunk tag
 
@@ -255,59 +258,89 @@ def evaluate(correctChunk, foundGuessed, foundCorrect, correctTags,
             correctChunkSum, foundGuessedSum, foundCorrectSum)
         # print overall performance
         if not silent:
-            print("processed %i tokens with %i phrases; " % (
-                  tokenCounter, foundCorrectSum), end='')
-            print("found: %i phrases; correct: %i.\n" % (
-                  foundGuessedSum, correctChunkSum), end='')
+            logger.info("processed %i tokens with %i phrases; " %
+                        (tokenCounter, foundCorrectSum))
+        if not silent:
+            logger.info("found: %i phrases; correct: %i.\n" %
+                        (foundGuessedSum, correctChunkSum))
         if tokenCounter:
             if not silent:
-                print("accuracy: %6.2f%%; " %
-                      (100 * correctTags / tokenCounter), end='')
+                logger.info("accuracy: %6.2f%%; " %
+                            (100 * correctTags / tokenCounter))
             if not silent:
-                print("precision: %6.2f%%; recall: %6.2f%%; FB1: %6.2f" %
-                      (precision, recall, FB1))
+                logger.info("precision: %6.2f%%; recall: %6.2f%%; FB1: %6.2f" %
+                            (precision, recall, FB1))
 
+        if not silent:
+            logger.info("%17s %10s %8s %8s" %
+                        ("TAG", "precision", "recall", "FB1"))
         for i in sortedTypes:
             precision, recall, FB1 = calcMetrics(
                 correctChunk[i], foundGuessed[i], foundCorrect[i])
             if not silent:
-                print("%17s: " % i, end='')
-            if not silent:
-                print("precision: %6.2f%%; recall: %6.2f%%; FB1: %6.2f" %
-                      (precision, recall, FB1), end='')
-            if not silent:
-                print("  %d" % foundGuessed[i])
+                logger.info("%17s %9.2f%% %7.2f%% %7.2f%%" %
+                            (i, precision, recall, FB1))
+            # if not silent:
+            #     logger.info("precision: %6.2f%%; recall: %6.2f%%; FB1: %6.2f" %
+            #                 (precision, recall, FB1))
+            # if not silent:
+            #     logger.info("  %d" % foundGuessed[i])
 
     # generate LaTeX output for tables like in
     # http://cnts.uia.ac.be/conll2003/ner/example.tex
     else:
         if not silent:
-            print(
+            logger.info(
                 "        & Precision &  Recall  & F\$_{\\beta=1} \\\\\\hline",
-                end='')
+            )
         for i in sortedTypes:
             precision, recall, FB1 = calcMetrics(
                 correctChunk[i], foundGuessed[i], foundCorrect[i])
             if not silent:
-                print("\n%-7s &  %6.2f\\%% & %6.2f\\%% & %6.2f \\\\" %
-                      (i, precision, recall, FB1), end='')
+                logger.info("\n%-7s &  %6.2f\\%% & %6.2f\\%% & %6.2f \\\\" %
+                            (i, precision, recall, FB1))
         if not silent:
-            print("\\hline")
+            logger.info("\\hline")
 
         precision, recall, FB1 = calcMetrics(
             correctChunkSum, foundGuessedSum, foundCorrectSum)
         if not silent:
-            print("Overall &  %6.2f\\%% & %6.2f\\%% & %6.2f \\\\\\hline" %
-                  (precision, recall, FB1))
-    return (precision, recall, FB1)
+            logger.info(
+                "Overall &  %6.2f\\%% & %6.2f\\%% & %6.2f \\\\\\hline" %
+                (precision, recall, FB1)
+            )
+    return precision, recall, FB1
+
+
+def fscore_from_preds(preds, silent=True):
+    boundary = "-X-"
+    buf = []
+    for pred in preds:
+        pred_labels = pred["pred_labels"]
+        tmp = [
+            [txt, gold, pred] for txt, pred, gold in zip(
+                pred["text"], pred["gold_labels"], pred_labels
+            )
+        ]
+        buf += tmp + [[boundary, "O", "O"]]
+    correctChunk, foundGuessed, foundCorrect, correctTags, tokenCounter = \
+        countChunks(buf)
+    prec, rec, fscore = evaluate(
+        correctChunk, foundGuessed,
+        foundCorrect, correctTags, tokenCounter,
+        latex=False, silent=silent
+    )
+    return prec, rec, fscore
 
 
 if __name__ == "__main__":
     args = parse_args()
     # process input and count chunks
-    correctChunk, foundGuessed, foundCorrect, correctTags, tokenCounter = countChunks(sys.stdin)
+    correctChunk, foundGuessed, foundCorrect, correctTags, tokenCounter = \
+        countChunks(sys.stdin)
 
     # compute metrics and print
-    evaluate(correctChunk, foundGuessed, foundCorrect, correctTags, tokenCounter, latex=args.latex)
+    evaluate(correctChunk, foundGuessed, foundCorrect,
+             correctTags, tokenCounter, latex=args.latex)
 
     sys.exit(0)

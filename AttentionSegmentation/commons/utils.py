@@ -50,6 +50,22 @@ def print_metrics(metrics, fp=None):
             f.write(metric_str)
 
 
+def setup_logger(logfile: str = "", loglevel: str = "INFO"):
+    numeric_level = getattr(logging, loglevel, None)
+    if not isinstance(numeric_level, int):
+        raise ValueError("Invalid log level: %s" % loglevel)
+    logger = logging.getLogger()
+    logging.basicConfig(
+        format='%(asctime)s: %(levelname)s: %(message)s',
+        level=numeric_level, stream=sys.stdout)
+    fmt = logging.Formatter('%(asctime)s: %(levelname)s: %(message)s')
+    if logfile != "":
+        logfile_handle = logging.FileHandler(logfile, 'w')
+        logfile_handle.setFormatter(fmt)
+        logger.addHandler(logfile_handle)
+    return logger
+
+
 def setup_output_dir(config, loglevel):
     """Setup the Experiment Folder
     Note that the output_dir stores each run as run-1, ....
@@ -108,18 +124,8 @@ def setup_output_dir(config, loglevel):
         fp.write(stdout)
 
     # Set up the logger
-    numeric_level = getattr(logging, loglevel, None)
-    if not isinstance(numeric_level, int):
-        raise ValueError("Invalid log level: %s" % loglevel)
     logfile = os.path.join(new_dirname, 'logfile.log')
-    logger = logging.getLogger()
-    logging.basicConfig(
-        format='%(asctime)s: %(levelname)s: %(message)s',
-        level=numeric_level, stream=sys.stdout)
-    fmt = logging.Formatter('%(asctime)s: %(levelname)s: %(message)s')
-    logfile_handle = logging.FileHandler(logfile, 'w')
-    logfile_handle.setFormatter(fmt)
-    logger.addHandler(logfile_handle)
+    setup_logger(logfile, loglevel)
     return new_dirname, config
 
 
