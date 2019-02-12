@@ -79,7 +79,7 @@ class Trainer(common_trainer.Trainer):
             prediction_file = os.path.join(
                 self._base_dir, "test_predictions.json")
             visualization_file = os.path.join(
-                self._base_dir, "visualization", "validation.html")
+                self._base_dir, "visualization", "test.html")
             self._segmenter.get_predictions(
                 instances=data,
                 model=self._model,
