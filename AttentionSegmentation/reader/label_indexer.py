@@ -46,11 +46,14 @@ class LabelIndexer(object):
         """
         filtered_tags = []
         for gold_tag in ner_tags:
+            matched = None
             for tag in self.tags2ix:
                 if re.match(f".*-{tag}", gold_tag) is not None:
-                    filtered_tags.append(gold_tag)
-                else:
-                    filtered_tags.append("O")
+                    matched = gold_tag
+            if matched is None:
+                filtered_tags.append("O")
+            else:
+                filtered_tags.append(matched)
         return filtered_tags
 
     def index(

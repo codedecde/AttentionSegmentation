@@ -259,14 +259,14 @@ def evaluate(correctChunk, foundGuessed, foundCorrect, correctTags,
         # print overall performance
         if not silent:
             logger.info("processed %i tokens with %i phrases; " %
-                        (tokenCounter, foundCorrectSum), end='')
+                        (tokenCounter, foundCorrectSum))
         if not silent:
             logger.info("found: %i phrases; correct: %i.\n" %
-                        (foundGuessedSum, correctChunkSum), end='')
+                        (foundGuessedSum, correctChunkSum))
         if tokenCounter:
             if not silent:
                 logger.info("accuracy: %6.2f%%; " %
-                            (100 * correctTags / tokenCounter), end='')
+                            (100 * correctTags / tokenCounter))
             if not silent:
                 logger.info("precision: %6.2f%%; recall: %6.2f%%; FB1: %6.2f" %
                             (precision, recall, FB1))
@@ -275,10 +275,10 @@ def evaluate(correctChunk, foundGuessed, foundCorrect, correctTags,
             precision, recall, FB1 = calcMetrics(
                 correctChunk[i], foundGuessed[i], foundCorrect[i])
             if not silent:
-                logger.info("%17s: " % i, end='')
+                logger.info("%17s: " % i)
             if not silent:
                 logger.info("precision: %6.2f%%; recall: %6.2f%%; FB1: %6.2f" %
-                            (precision, recall, FB1), end='')
+                            (precision, recall, FB1))
             if not silent:
                 logger.info("  %d" % foundGuessed[i])
 
@@ -288,13 +288,13 @@ def evaluate(correctChunk, foundGuessed, foundCorrect, correctTags,
         if not silent:
             logger.info(
                 "        & Precision &  Recall  & F\$_{\\beta=1} \\\\\\hline",
-                end='')
+            )
         for i in sortedTypes:
             precision, recall, FB1 = calcMetrics(
                 correctChunk[i], foundGuessed[i], foundCorrect[i])
             if not silent:
                 logger.info("\n%-7s &  %6.2f\\%% & %6.2f\\%% & %6.2f \\\\" %
-                            (i, precision, recall, FB1), end='')
+                            (i, precision, recall, FB1))
         if not silent:
             logger.info("\\hline")
 

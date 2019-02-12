@@ -136,6 +136,7 @@ class BasePredictionClass(object):
                     preds=pred,
                     attns=attn
                 )
+                assert len(pred_labels) == len(gold_labels) == len(text)
                 for t in all_counts:
                     all_counts[t] += 1.
 
