@@ -22,7 +22,7 @@ SCRIPT_HEADER = f"""
 PYTHON=/zfsauton3/home/bpatra/miniconda3/bin/python3.6
 
 """
-SCRATCH = "."
+SCRATCH = "/home/scratch/bpatra"
 scripts = [[SCRIPT_HEADER] for _ in range(NUM_SCRIPTS)]
 config_count = 0
 DROPOUT = 0.
@@ -49,11 +49,11 @@ for METHOD in METHODS:
             "chars": {{
                 "type": "characters",
                 "namespace": "token_chars"
+            }},
+            "elmo": {{
+                  "type": "elmo_characters"
             }}
          }},
-         "elmo": {{
-              "type": "elmo_characters"
-         }}
       }},
       "train_data_path": "./Data/CoNLLData/train.txt",
       "validation_data_path": "./Data/CoNLLData/valid.txt",
@@ -126,7 +126,7 @@ for METHOD in METHODS:
         "optimizer": "adam",
         "num_epochs": 50,
         "patience": 10,
-        "cuda_device": -1,
+        "cuda_device": 0,
         "validation_metric": "+accuracy",
         "num_serialized_models_to_keep": 1,
         "learning_rate_scheduler": {{
@@ -149,5 +149,6 @@ for METHOD in METHODS:
 # Now write the scripts
 for ix in range(len(scripts)):
     script_file = os.path.join(SCRIPT_DIR, f"script_{ix}.sh")
-    with open(script_file, "w") as f:
-        f.write("\n".join(scripts[ix]))
+    if len(scripts[ix]) > 1:
+        with open(script_file, "w") as f:
+            f.write("\n".join(scripts[ix]))
