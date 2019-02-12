@@ -28,6 +28,9 @@ import argparse
 import sys
 from collections import defaultdict
 import pdb
+import logging
+
+logger = logging.getLogger(__name__)
 
 # sanity check
 def parse_args():
@@ -255,51 +258,53 @@ def evaluate(correctChunk, foundGuessed, foundCorrect, correctTags,
             correctChunkSum, foundGuessedSum, foundCorrectSum)
         # print overall performance
         if not silent:
-            print("processed %i tokens with %i phrases; " %
-                  (tokenCounter, foundCorrectSum), end='')
+            logger.info("processed %i tokens with %i phrases; " %
+                        (tokenCounter, foundCorrectSum), end='')
         if not silent:
-            print("found: %i phrases; correct: %i.\n" %
-                  (foundGuessedSum, correctChunkSum), end='')
+            logger.info("found: %i phrases; correct: %i.\n" %
+                        (foundGuessedSum, correctChunkSum), end='')
         if tokenCounter:
             if not silent:
-                print("accuracy: %6.2f%%; " %
-                      (100 * correctTags / tokenCounter), end='')
+                logger.info("accuracy: %6.2f%%; " %
+                            (100 * correctTags / tokenCounter), end='')
             if not silent:
-                print("precision: %6.2f%%; recall: %6.2f%%; FB1: %6.2f" %
-                      (precision, recall, FB1))
+                logger.info("precision: %6.2f%%; recall: %6.2f%%; FB1: %6.2f" %
+                            (precision, recall, FB1))
 
         for i in sortedTypes:
             precision, recall, FB1 = calcMetrics(
                 correctChunk[i], foundGuessed[i], foundCorrect[i])
             if not silent:
-                print("%17s: " % i, end='')
+                logger.info("%17s: " % i, end='')
             if not silent:
-                print("precision: %6.2f%%; recall: %6.2f%%; FB1: %6.2f" %
-                      (precision, recall, FB1), end='')
+                logger.info("precision: %6.2f%%; recall: %6.2f%%; FB1: %6.2f" %
+                            (precision, recall, FB1), end='')
             if not silent:
-                print("  %d" % foundGuessed[i])
+                logger.info("  %d" % foundGuessed[i])
 
     # generate LaTeX output for tables like in
     # http://cnts.uia.ac.be/conll2003/ner/example.tex
     else:
         if not silent:
-            print(
+            logger.info(
                 "        & Precision &  Recall  & F\$_{\\beta=1} \\\\\\hline",
                 end='')
         for i in sortedTypes:
             precision, recall, FB1 = calcMetrics(
                 correctChunk[i], foundGuessed[i], foundCorrect[i])
             if not silent:
-                print("\n%-7s &  %6.2f\\%% & %6.2f\\%% & %6.2f \\\\" %
-                      (i, precision, recall, FB1), end='')
+                logger.info("\n%-7s &  %6.2f\\%% & %6.2f\\%% & %6.2f \\\\" %
+                            (i, precision, recall, FB1), end='')
         if not silent:
-            print("\\hline")
+            logger.info("\\hline")
 
         precision, recall, FB1 = calcMetrics(
             correctChunkSum, foundGuessedSum, foundCorrectSum)
         if not silent:
-            print("Overall &  %6.2f\\%% & %6.2f\\%% & %6.2f \\\\\\hline" %
-                  (precision, recall, FB1))
+            logger.info(
+                "Overall &  %6.2f\\%% & %6.2f\\%% & %6.2f \\\\\\hline" %
+                (precision, recall, FB1)
+            )
     return precision, recall, FB1
 
 
