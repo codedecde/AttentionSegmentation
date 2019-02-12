@@ -271,16 +271,20 @@ def evaluate(correctChunk, foundGuessed, foundCorrect, correctTags,
                 logger.info("precision: %6.2f%%; recall: %6.2f%%; FB1: %6.2f" %
                             (precision, recall, FB1))
 
+        if not silent:
+            logger.info("%17s %10s %8s %8s" %
+                        ("TAG", "precision", "recall", "FB1"))
         for i in sortedTypes:
             precision, recall, FB1 = calcMetrics(
                 correctChunk[i], foundGuessed[i], foundCorrect[i])
             if not silent:
-                logger.info("%17s: " % i)
-            if not silent:
-                logger.info("precision: %6.2f%%; recall: %6.2f%%; FB1: %6.2f" %
-                            (precision, recall, FB1))
-            if not silent:
-                logger.info("  %d" % foundGuessed[i])
+                logger.info("%17s %9.2f%% %7.2f%% %7.2f%%" %
+                            (i, precision, recall, FB1))
+            # if not silent:
+            #     logger.info("precision: %6.2f%%; recall: %6.2f%%; FB1: %6.2f" %
+            #                 (precision, recall, FB1))
+            # if not silent:
+            #     logger.info("  %d" % foundGuessed[i])
 
     # generate LaTeX output for tables like in
     # http://cnts.uia.ac.be/conll2003/ner/example.tex
