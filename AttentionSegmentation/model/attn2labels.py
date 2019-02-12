@@ -241,7 +241,8 @@ class BasicMultiPredictions(BasePredictionClass):
         else:
             pred_labels = []
             for ix in range(len(text)):
-                prob, tag = max([(attns[tag][ix], tag) for tag in attns])
+                prob, tag = max([(attns[tag][ix], tag) for tag in attns
+                                 if tag in preds])
                 if prob < self._tol:
                     pred_labels.append("O")
                 else:
