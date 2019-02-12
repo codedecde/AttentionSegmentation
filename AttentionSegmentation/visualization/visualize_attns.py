@@ -3,6 +3,7 @@ from typing import List, Optional, Dict
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+from collections import OrderedDict
 import seaborn as sn
 import pdb
 import json
@@ -24,6 +25,163 @@ colors2rgb = {}
 colors2rgb['purple'] = '#712f79'  # Pred tag, gold no tag
 colors2rgb['brickRed'] = '#d2405f'  # Pred no tag, gold tag
 colors2rgb['yellowGreen'] = '#e0ff4f'  # Both tag
+
+tag2color = OrderedDict({
+    "PER": "#e88a1a",
+    "ORG": "#005542",
+    "LOC": "#10316b",
+    "MISC": "#f6b8d1"
+})
+dark_backgrounds = set(["ORG", "LOC"])
+
+
+def strip(string):
+    return re.sub(".*-", "", string)
+
+
+def get_html_from_pred(pred):
+    writebuf = []
+    for ix in range(len(pred["text"])):
+        pred_label = strip(pred["pred_labels"][ix])
+        gold_label = strip(pred["gold_labels"][ix])
+        correct = False
+        if pred_label == gold_label:
+            correct = True
+        word = pred["text"][ix]
+        html = ['<div class="tooltip">']
+        attn_at_point = [(pred["attn"][t][ix], t) for t in pred["attn"]
+                         if t in pred["pred"]]
+        if len(attn_at_point) == 0:
+            attn_weight, tag = max([(pred["attn"][t][ix], t) for t in pred["attn"]])
+            attn_hex = str(hex(int(abs(attn_weight) * 255)))[2:]
+            # we use a neutral gray color for this case
+            attn_color = "#3c415e" + attn_hex
+        else:
+            attn_weight, tag = max(attn_at_point)
+            attn_hex = str(hex(int(abs(attn_weight) * 255)))[2:]
+            attn_color = tag2color[tag] + attn_hex
+        html.append('<span style="padding:2px">')
+        if correct and pred_label != "O":
+            html.append('<underline style=text-decoration-color:#8dde28>')
+        else:
+            if pred_label != "O":
+                color = tag2color[pred_label]
+                html.append(f'<overline style="text-decoration-color:{color}">')
+            if gold_label != "O":
+                color = tag2color[gold_label]
+                html.append(f'<underline style="text-decoration-color:{color}">')
+        html.append(f"<span style=background-color:{attn_color}>")
+        html.append(word)
+        html.append("</span>")
+        if correct and pred != "O":
+            html.append('</underline>')
+        else:
+            if gold_label != "O":
+                html.append('</underline>')
+            if pred_label != "O":
+                html.append("</overline>")
+        html.append('</span>')
+        html.append('<span class="tooltiptext">')
+        for tag in pred["attn"]:
+            attnval = "{0:2.2f}".format(pred["attn"][tag][ix])
+            string = "{0:>4s}: {1:4s}".format(tag, attnval)
+            html.append(f"{string} <br>")
+        html.append('</span>')
+        html.append('</div>')
+        writebuf.append("".join(html))
+    writebuf.append(" ")
+    writebuf.append("[")
+    for t in pred["pred"]:
+        if t in pred["gold"]:
+            writebuf.append(f"<correct>{t} </correct>")
+        else:
+            writebuf.append(f"<incorrect>{t} </incorrect>")
+    writebuf.append("]")
+    writebuf.append(" ")
+    writebuf.append("[")
+    for t in pred["gold"]:
+        if t in pred["pred"]:
+            writebuf.append(f"<correct>{t} </correct>")
+        else:
+            writebuf.append(f"<incorrect>{t} </incorrect>")
+    writebuf.append("]")
+    return "".join(writebuf)
+
+
+def colorized_predictions_to_webpage(
+        predictions, webpage="visualize.html"):
+    header = (
+        '<html>\n'
+        '<head>\n'
+        '<style>\n'
+        ' correct { \n'
+        '     color: #8dde28; \n'
+        '     padding-right: 5px; \n'
+        '     padding-left: 5px \n'
+        ' }\n'
+        ' incorrect { \n'
+        '     color: #cf3030; \n'
+        '     padding-right: 5px; \n'
+        '     padding-left: 5px \n'
+        ' }\n'
+        ' overline {\n'
+        '    text-decoration: overline;\n'
+        ' }\n'
+        ' underline {\n'
+        '    text-decoration: underline;\n'
+        ' }\n'
+        ' body { color: color:#000000}\n'
+        ' .tooltip { \n'
+        '     position: relative; \n'
+        '     display: inline-block; \n'
+        ' }\n'
+        ' .tooltip .tooltiptext {  \n'
+        '     visibility: hidden;  \n'
+        '     width: 120px;  \n'
+        '     background-color: black; \n'
+        '     color: #fff; \n'
+        '     text-align: center;  \n'
+        '     border-radius: 6px;  \n'
+        '     padding: 5px 0;  \n'
+        '     position: absolute;  \n'
+        '     z-index: 1;  \n'
+        '     top: 150%; \n'
+        '     left: 50%; \n'
+        '     margin-left: -60px;  \n'
+        ' }\n'
+        ' .tooltip .tooltiptext::after { \n'
+        '     content: " ";    \n'
+        '     position: absolute;  \n'
+        '     bottom: 100%;\n'
+        '     left: 50%;   \n'
+        '     margin-left: -5px;   \n'
+        '     border-width: 5px;   \n'
+        '     border-style: solid; \n'
+        '     border-color: transparent transparent black transparent; \n'
+        ' }\n'
+        ' .tooltip:hover .tooltiptext {  \n'
+        '     visibility: visible; \n'
+        ' }\n'
+        '</style>\n'
+        '</head>\n'
+    )
+    body = ["<body>"]
+    for tag in tag2color:
+        color = tag2color[tag]
+        if tag in dark_backgrounds:
+            text_background = "white"
+        else:
+            text_background = "black"
+        text = f'<span style="background-color:{color}; color: {text_background}">{tag}</span> '
+        body.append(text)
+    body.append("<br><br>")
+    for pred in predictions:
+        html = get_html_from_pred(pred)
+        body.append(f"{html}<br><br>")
+    footer = ["</body></html>"]
+    with open(webpage, "w") as f:
+        f.write("\n".join([header] + body + footer))
+
 
 def colorized_predictions_to_webpage_binary(
         predictions, vis_page="visualize.html"):
@@ -143,218 +301,6 @@ def colorized_predictions_to_webpage_binary(
         f.write(footer)
 
 
-def colorized_predictions_to_webpage(
-        predictions, vis_page="visualize.html"):
-    """This generates the visualization web page from predictions
-
-    Arguments:
-        predictions (List[Dict[str, Any]]): A list of predictions.
-            Each prediction contains:
-                * text (List[str]): list of tokens
-                * pred (List[str]): The predicted tokens
-                * gold (List[str]): The gold tokens
-                * attn (List[float]): The list of float tokens
-                * pred_labels (List[str]) : The list of predicted
-                    labels
-                * gold_labels (List[str]) : The list of gold labels
-        vis_page (str): The final output page
-
-    """
-    with open(vis_page, "w") as f:
-        purple = colors2rgb['purple']
-        brickRed = colors2rgb['brickRed']
-        yellowGreen = colors2rgb['yellowGreen']
-        header = (
-            '<html>\n'
-            '<head>\n'
-            '<style>\n'  # The CSS element
-            '   correct { '
-            '       color: #8dde28; '
-            '       padding-right: 5px; '
-            '       padding-left: 5px '
-            '   }\n'
-            '   incorrect { '
-            '       color: #e93f3f; '
-            '       padding-right: 5px; '
-            '       padding-left: 5px '
-            '   }\n'
-            '   body { color: color:#000000}\n'
-            '   .tooltip { '
-            '       position: relative; '
-            '       display: inline-block; '
-            # '       border-bottom: 1px dotted black;'
-            '   }\n'
-            '   .tooltip .tooltiptext {  '
-            '       visibility: hidden;  '
-            '       width: 120px;  '
-            '       background-color: black; '
-            '       color: #fff; '
-            '       text-align: center;  '
-            '       border-radius: 6px;  '
-            '       padding: 5px 0;  '
-            '       position: absolute;  '
-            '       z-index: 1;  '
-            '       top: 150%; '
-            '       left: 50%; '
-            '       margin-left: -60px;  '
-            '   }\n'
-            '   .tooltip .tooltiptext::after { '
-            '       content: " ";    '
-            '       position: absolute;  '
-            '       bottom: 100%;  /* At the top of the tooltip */   '
-            '       left: 50%;   '
-            '       margin-left: -5px;   '
-            '       border-width: 5px;   '
-            '       border-style: solid; '
-            '       border-color: transparent transparent black transparent; '
-            '   }\n'
-            '   .tooltip:hover .tooltiptext {  '
-            '       visibility: visible; '
-            '   }\n'
-            '</style>\n'
-            '</head>\n'
-            '<body>'
-            'Key:</br>'
-            '<span'
-            f'  style="background-color:{purple};'
-            '   padding-left: 10px;'
-            '   padding-right: 10px;'
-            '   color:white" >Pred tag, Gold no tag</span></br>'
-            '<span'
-            f'   style="background-color:{brickRed};'
-            '    padding-left: 10px;'
-            '    padding-right: 10px;'
-            '    color:white" >Pred no tag, Gold tag</span> </br>'
-            '<span'
-            f'   style="background-color:{yellowGreen};'
-            '    padding-left: 10px;'
-            '    padding-right: 10px;'
-            '    color:black">Both Correct tag</span> </br>'
-            '</br>'
-        )
-        f.write(header)
-        for pred in predictions:
-            txt = " ".join(pred["text"])
-            attn_weights = pred["attn"]
-            pred_label = pred["pred"]
-            gold_label = pred["gold"]
-            pred_tags = pred["pred_labels"]
-            gold_tags = pred["gold_labels"]
-            html = colorize_text(txt, attn_weights, pred_tags, gold_tags)
-            if pred_label == gold_label:
-                pred_gold = (
-                    '<correct>'
-                    f' {pred_label} '
-                    f' {gold_label} '
-                    '</correct>'
-                )
-            else:
-                pred_gold = (
-                    '<incorrect>'
-                    f' {pred_label} '
-                    f' {gold_label} '
-                    '</incorrect>'
-                )
-            f.write(f"{html}{pred_gold}<br>")
-        footer = "</body></html>"
-        f.write(footer)
-
-
-# class html_visualizer(object):
-#     """This collects the different visualization methods for easy visualization
-#     """
-
-#     def __init__(self, vocab, reader, tol=0.01):
-#         self._vocab = vocab
-#         self._iterator = BasicIterator(batch_size=32)
-#         self._iterator.index_with(self._vocab)
-#         self._reader = reader
-#         self._indexer = self._reader.get_label_indexer()
-#         self._tol = tol
-
-#     def _get_text_from_instance(self, instance: Instance) -> List[str]:
-#         """Helper function to extract text from an instance
-#         """
-#         return list(map(lambda x: x.text, instance.fields['tokens'].tokens))
-
-#     def visualize_data(
-#         self,
-#         instances: List[Instance],
-#         model: Model,
-#         filename: str,
-#         cuda_device: int = -1
-#     )-> List[Dict]:
-#         """This function helps visualize the attention maps
-#         We use a basic itereator, since a bucket iterator shuffles
-#         data, even for shuffle=False
-
-#         Arguments:
-#             data (List[Instance]) : The list of instances for inference
-#             filename (str) : The html file to output to
-#             cuda_device (int) : The GPU being used
-
-#         Returns:
-#             predictions (List[Dict]) : The predictions. Each contains the
-#                 following keys
-#                 * text: The token
-#                 * pred: The predicted label
-#                 * gold: The gold label
-#                 * pred_labels : The predicted labels for segmentation
-#                 * gold_labels : The gold labels for segmentation
-
-#         """
-#         iterator = self._iterator(
-#             instances,
-#             num_epochs=1,
-#             shuffle=False,
-#             cuda_device=cuda_device,
-#             for_training=False
-#         )
-#         model.eval()
-#         num_batches = self._iterator.get_num_batches(instances)
-#         inference_generator_tqdm = Tqdm.tqdm(iterator, total=num_batches)
-#         predictions = []
-#         index = 0
-#         index_labeler = self._reader.get_label_indexer()
-#         index_tag = list(self._indexer.tags2ix.keys())[0]
-#         correct_counts = 0.
-#         for batch in inference_generator_tqdm:
-#             # Currently I don't support multi-gpu data parallel
-#             output_dict = model.decode(model(**batch))
-#             for ix in range(len(output_dict["preds"])):
-#                 text = self._get_text_from_instance(instances[index])
-#                 label_num = instances[index].fields['labels'].labels[0]
-#                 # FIXME: Currently supporting binary classification
-#                 assert len(instances[index].fields['labels'].labels) == 1
-#                 pred = output_dict["preds"][ix]
-#                 attn = output_dict["attentions"][ix]
-#                 gold = "O"
-#                 gold_labels = instances[index].fields['tags'].labels
-#                 gold_labels = self._indexer.extract_relevant(gold_labels)
-#                 if pred == "O":
-#                     pred_labels = ["O" for _ in range(len(attn))]
-#                 else:
-#                     pred_labels = get_binary_preds_from_attns(
-#                         attn, index_tag, self._tol
-#                     )
-#                 if label_num < len(index_labeler.ix2tags):
-#                     gold = index_labeler.ix2tags[label_num]
-#                 if pred == gold:
-#                     correct_counts += 1.
-#                 prediction = {
-#                     "text": text,
-#                     "pred": pred,
-#                     "attn": attn,
-#                     "gold": gold,
-#                     "pred_labels": pred_labels,
-#                     "gold_labels": gold_labels
-#                 }
-#                 predictions.append(prediction)
-#                 index += 1
-#         if filename != "":
-#             colorized_predictions_to_webpage(
-#                 predictions, vis_page=filename)
-#         return predictions
 
 
 def _attn_to_rgb(attn_weights, pred_tag, gold_tag):

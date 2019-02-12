@@ -60,43 +60,6 @@ class Trainer(common_trainer.Trainer):
     def train(self, *args, **kwargs):
         super(Trainer, self).train(*args, **kwargs)
 
-    # @overrides
-    # def _description_from_metrics(
-    #         self, metrics: Dict[str, Dict[str, float]]) -> str:
-    #     """Show metrics.
-
-    #     The metrics format we get are of the form::
-
-    #         "Label"
-    #             "precision": _
-    #             "recall": _
-    #             "fscore": _
-    #             "accuracy": _
-    #             "loss": _
-
-    #     """
-    #     new_metrics = defaultdict(list)
-    #     for label in metrics:
-    #         if re.match(".*loss$", label) is not None:
-    #             # all losses are of the form loss/ entropy_loss, etc
-    #             new_metrics[label] = metrics[label]
-    #         else:
-    #             for metric in metrics[label]:
-    #                 new_metrics[metric].append(metrics[label][metric])
-    #     metrics_to_show = ["accuracy", "fscore"]
-    #     losses_to_show = ["entropy_loss", "coverage_loss"]
-    #     writebuf = []
-    #     for metric in metrics_to_show:
-    #         writebuf.append(f"{metric}: {np.mean(new_metrics[metric]):2.2f}")
-    #     for loss in losses_to_show:
-    #         if loss in new_metrics:
-    #             writebuf.append(
-    #                 get_loss_string(loss, new_metrics[loss]))
-    #     lossval = new_metrics['loss']
-    #     writebuf.append(get_loss_string("loss", lossval))
-    #     write_string = ", ".join(writebuf) + " ||"
-    #     return write_string
-
     @overrides
     def test(self, data):
         """Test model, by loading best.th, and getting metrics
@@ -111,67 +74,19 @@ class Trainer(common_trainer.Trainer):
         metrics = self._get_metrics(loss, num_batches, reset=True)
         logger.info("Testing Results now")
         writebuf = self._description_from_metrics(metrics)
-        # writebuf = "########## TESTING ##########"
-        # writebuf = self._prettyprint(metrics, writebuf)
         logger.info(writebuf)
-        if self._visualizer is not None:
-            filename = os.path.join(
-                self._visualization_dirname, "test.html")
-            logger.info(f"Writing test visualization at {filename}")
-            self._visualizer.visualize_data(
+        if self._segmenter is not None:
+            prediction_file = os.path.join(
+                self._base_dir, "test_predictions.json")
+            visualization_file = os.path.join(
+                self._base_dir, "visualization", "validation.html")
+            self._segmenter.get_predictions(
                 instances=data,
                 model=self._model,
-                filename=filename,
-                cuda_device=self._iterator_device
-            )
-
-    # @overrides
-    # def _get_validation_metric(self, val_metrics):
-    #     """We return the mean of all _validation_metric
-    #     across labels.
-    #     """
-    #     # returns average metric across all labels
-    #     if self._validation_metric in val_metrics.keys():
-    #         return val_metrics[self._validation_metric]
-    #     ret_metric_list = []
-    #     for label in val_metrics:
-    #         if re.match(".*loss$", label) is not None:
-    #             continue
-    #         ret_metric_list.append(val_metrics[label][self._validation_metric])
-    #     return np.mean(ret_metric_list)
-
-    def _prettyprint(self, metrics, writebuf):
-        """Prettily printing the precision, recall, fscore for each label.
-        """
-        writebuf += "\n{0:>20s} {1:>10s} {2:>10s} {3:>10s} {4:>10s} {5:>10s}".format(
-            "Tag", "Precision", "Recall", "Fscore", "Accuracy", "Loss")
-        averages = {"precision": [],
-                    "recall": [], "fscore": [], "accuracy": []}
-        for label in sorted(metrics.keys()):
-            if re.match(".*loss$", label) is not None:
-                continue
-            precision = "{0:.2f}".format(metrics[label]["precision"])
-            averages["precision"].append(metrics[label]["precision"])
-            recall = "{0:.2f}".format(metrics[label]["recall"])
-            averages["recall"].append(metrics[label]["recall"])
-            fscore = "{0:.2f}".format(metrics[label]["fscore"])
-            averages["fscore"].append(metrics[label]["fscore"])
-            accuracy = "{0:.2f}".format(metrics[label]["accuracy"])
-            averages["accuracy"].append(metrics[label]["accuracy"])
-            loss = "{0:.2e}".format(metrics["loss"])
-            writebuf += "\n{0:>20s} {1:>10s} {2:>10s} {3:>10s} {4:>10s} {5:>10s}".format(
-                label, precision, recall,
-                fscore, accuracy, loss)
-        precision = "{0:.2f}".format(np.mean(averages["precision"]))
-        recall = "{0:.2f}".format(np.mean(averages["recall"]))
-        fscore = "{0:.2f}".format(np.mean(averages["fscore"]))
-        accuracy = "{0:.2f}".format(np.mean(averages["accuracy"]))
-        writebuf += "\n{0:>20s} {1:>10s} {2:>10s} {3:>10s} {4:>10s}".format(
-            "Mean", precision, recall,
-            fscore, accuracy
-        )
-        writebuf += "\n############################"
-        return writebuf
+                cuda_device=self._iterator_device,
+                prediction_file=prediction_file,
+                visualization_file=visualization_file,
+                verbose=True)
 
     @overrides
     def _batch_loss(self, batch: torch.Tensor,
@@ -202,20 +117,6 @@ class Trainer(common_trainer.Trainer):
             loss = None
 
         return loss
-
-    # @overrides
-    # def _metrics_to_console(self,  # pylint: disable=no-self-use
-    #                         train_metrics: dict,
-    #                         val_metrics: dict = None) -> None:
-    #     """Log the training / validation metric
-    #     """
-    #     writebuf = "########## TRAINING ##########"
-    #     writebuf = self._prettyprint(train_metrics, writebuf)
-    #     logger.info(writebuf)
-    #     if val_metrics:
-    #         writebuf = "########## VALIDATION ##########"
-    #         writebuf = self._prettyprint(val_metrics, writebuf)
-    #         logger.info(writebuf)
 
     @overrides
     def _inference_loss(self, data,

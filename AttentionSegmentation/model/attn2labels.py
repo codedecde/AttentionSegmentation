@@ -12,7 +12,7 @@ from allennlp.models.model import Model
 from allennlp.common.tqdm import Tqdm
 
 from AttentionSegmentation.visualization.visualize_attns import \
-    colorized_predictions_to_webpage_binary
+    colorized_predictions_to_webpage_binary, colorized_predictions_to_webpage
 from AttentionSegmentation.evaluation.conlleval_perl import \
     fscore_from_preds
 
@@ -206,7 +206,8 @@ class BasicBinaryPredictions(BasePredictionClass):
     @overrides
     def visualize(self, predictions, visualization_filename):
         colorized_predictions_to_webpage_binary(
-            predictions, visualization_filename)
+            predictions, visualization_filename
+        )
 
     @classmethod
     def from_params(cls, vocab, reader, params):
@@ -252,6 +253,12 @@ class BasicMultiPredictions(BasePredictionClass):
                     else:
                         pred_labels.append(f"B-{tag}")
         return pred_labels
+
+    @overrides
+    def visualize(self, predictions, visualization_filename):
+        colorized_predictions_to_webpage(
+            predictions, visualization_filename
+        )
 
     @classmethod
     def from_params(cls, vocab, reader, params):
