@@ -10,6 +10,7 @@ from allennlp.data.iterators import BasicIterator
 from allennlp.data.instance import Instance
 from allennlp.models.model import Model
 from allennlp.common.tqdm import Tqdm
+from nltk.corpus import stopwords
 
 from AttentionSegmentation.visualization.visualize_attns import \
     colorized_predictions_to_webpage_binary, colorized_predictions_to_webpage
@@ -61,6 +62,12 @@ class BasePredictionClass(object):
 
     def visualize(self, *args, **kwargs):
         raise NotImplementedError("The child class implements this")
+
+    def _get_filtered_set(self):
+        """
+        The set of words/symbols to be filtered out
+        """
+        return set()
 
     def get_predictions(self, instances: List[Instance], model: Model,
                         cuda_device: int = -1,
@@ -193,7 +200,8 @@ class BasicBinaryPredictions(BasePredictionClass):
         else:
             pred_labels = []
             for ix in range(len(attns[self._tag])):
-                if attns[self._tag][ix] < self._tol:
+                if attns[self._tag][ix] < self._tol or \
+                        text[ix].lower() in self._get_filtered_set():
                     pred_labels.append("O")
                 else:
                     if len(pred_labels) > 0 and re.match(
@@ -244,7 +252,8 @@ class BasicMultiPredictions(BasePredictionClass):
             for ix in range(len(text)):
                 prob, tag = max([(attns[tag][ix], tag) for tag in attns
                                  if tag in preds])
-                if prob < self._tol:
+                if prob < self._tol or \
+                        text[ix].lower() in self._get_filtered_set():
                     pred_labels.append("O")
                 else:
                     if len(pred_labels) > 0 and re.match(
@@ -268,3 +277,71 @@ class BasicMultiPredictions(BasePredictionClass):
         return cls(vocab=vocab,
                    reader=reader,
                    visualize=visualize, tol=tol)
+
+
+class SymbolFilteredBinaryPredictions(BasicBinaryPredictions):
+
+    def __init__(self,
+                 vocab, reader,
+                 visualize=False,
+                 tol=0.01):
+        super(SymbolFilteredBinaryPredictions, self).__init__(
+            vocab, reader, visualize, tol)
+        self._punct_set = set([".", ",", "!", "-", "?", "'", ")", "("])
+
+    @overrides
+    def _get_filtered_set(self):
+        return self._punct_set
+
+
+class SymbolStopwordFilteredBinaryPredictions(BasicBinaryPredictions):
+
+    def __init__(self,
+                 vocab, reader,
+                 visualize=False,
+                 tol=0.01):
+        super(SymbolStopwordFilteredBinaryPredictions, self).__init__(
+            vocab, reader, visualize, tol)
+        stopword_list = stopwords.words("english")
+        stop_set = set(stopword_list)
+        punct_set = set([".", ",", "!", "-", "?", "'", ")", "("])
+        self._filter_set = stop_set | punct_set
+
+    @overrides
+    def _get_filtered_set(self):
+        return self._filter_set
+
+
+class SymbolFilteredMultiPredictions(BasicMultiPredictions):
+
+    def __init__(self,
+                 vocab, reader,
+                 visualize=False,
+                 tol=0.01,
+                 use_prod=False):
+        super(SymbolFilteredMultiPredictions, self).__init__(
+            vocab, reader, visualize, tol, use_prod)
+        self._punct_set = set([".", ",", "!", "-", "?", "'", ")", "("])
+
+    @overrides
+    def _get_filtered_set(self):
+        return self._punct_set
+
+
+class SymbolStopwordFilteredMultiPredictions(BasicMultiPredictions):
+
+    def __init__(self,
+                 vocab, reader,
+                 visualize=False,
+                 tol=0.01,
+                 use_prod=False):
+        super(SymbolStopwordFilteredMultiPredictions, self).__init__(
+            vocab, reader, visualize, tol, use_prod)
+        stopword_list = stopwords.words("english")
+        stop_set = set(stopword_list)
+        punct_set = set([".", ",", "!", "-", "?", "'", ")", "("])
+        self._filter_set = stop_set | punct_set
+
+    @overrides
+    def _get_filtered_set(self):
+        return self._filter_set
