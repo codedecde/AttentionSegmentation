@@ -4,6 +4,7 @@
 from typing import Callable, Dict, List, Set
 
 import editdistance
+from collections import defaultdict
 from overrides import overrides
 import torch
 from torch.autograd import Variable
