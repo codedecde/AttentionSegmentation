@@ -116,9 +116,12 @@ class BucketIterator(BasicIterator):
                 for field_name, field_lengths in padding_lengths.items():
                     noisy_lengths[field_name] = add_noise_to_dict_values(field_lengths, padding_noise)
                 padding_lengths = noisy_lengths
-            instance_with_lengths = ([padding_lengths[field_name][padding_key]
-                                      for (field_name, padding_key) in sorting_keys],
-                                     instance)
+            try:
+                instance_with_lengths = ([padding_lengths[field_name][padding_key]
+                                          for (field_name, padding_key) in sorting_keys],
+                                         instance)
+            except Exception as e:
+                import pdb; pdb.set_trace()
             instances_with_lengths.append(instance_with_lengths)
         instances_with_lengths.sort(key=lambda x: x[0])
         return [instance_with_lengths[-1] for instance_with_lengths in instances_with_lengths]

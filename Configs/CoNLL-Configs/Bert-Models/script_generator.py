@@ -15,6 +15,11 @@ NUM_SCRIPTS = 4
 METHODS = ["bert-base-cased", "bert-base-multilingual-cased", "bert-base-multilingual-uncased"]
 # drop_list = [0.2, 0.4, 0.5, 0.6, 0.8]
 TOTAL = len(METHODS)
+INP_DIMS = {
+  "bert-base-cased": 1228,
+  "bert-bert-base-multilingual-cased": 1228,
+  "bert-base-multilingual-uncased": 1228
+}
 
 num_per_script = -(-TOTAL // NUM_SCRIPTS)
 
@@ -30,6 +35,7 @@ TEMP = 1.
 
 for METHOD in METHODS:
     lowercase = "true" if "uncased" in METHOD else "false"
+    DIM = INP_DIMS[METHOD]
     raw = f"""
     {{
       "base_output_dir": "{SCRATCH}/Experiments/CoNLL/Multi-Label/Bert-Models/{METHOD}",
@@ -53,7 +59,7 @@ for METHOD in METHODS:
             }},
             "bert": {{
                   "type": "bert-pretrained",
-                  "pretrained_model": "./Data/embeddings/BERTEmbedings/{METHOD}",
+                  "pretrained_model": "./Data/embeddings/BERTEmbeddings/{METHOD}/vocab.txt",
                   "do_lowercase": {lowercase}
             }}
          }},
@@ -64,7 +70,7 @@ for METHOD in METHODS:
       "evaluate_on_test": true,
       "model": {{
         "type": "MultiClassifier",
-        "method": "{METHOD}",
+        "method": "binary",
         "text_field_embedder": {{
           "tokens": {{
             "type": "embedding",
@@ -95,7 +101,7 @@ for METHOD in METHODS:
         }},
         "encoder_word": {{
           "type": "gru",
-          "input_size": 1484,
+          "input_size": {DIM},
           "hidden_size": 150,
           "num_layers": 1,
           "dropout": 0.5,
