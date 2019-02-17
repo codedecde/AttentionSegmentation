@@ -345,6 +345,8 @@ def get_text_field_mask(text_field_tensors: Dict[str, torch.Tensor],
     the mask.  Most frequently this will be a character id tensor, but it could also be a
     featurized representation of each token, etc.
 
+    If the input ``text_field_tensors`` contains the "mask" key, this is returned instead of inferring the mask.
+
     NOTE: Our functions for generating masks create torch.LongTensors, because using
     torch.ByteTensors inside Variables makes it easy to run into overflow errors
     when doing mask manipulation, such as summing to get the lengths of sequences - see below.
@@ -353,6 +355,9 @@ def get_text_field_mask(text_field_tensors: Dict[str, torch.Tensor],
     >>> var_mask = torch.autograd.Variable(mask)
     >>> var_mask.sum() # equals 4, due to 8 bit precision - the sum overflows.
     """
+    if "mask" in text_field_tensors:
+        return text_field_tensors["mask"]
+
     tensor_dims = [(tensor.dim(), tensor) for tensor in text_field_tensors.values()]
     tensor_dims.sort(key=lambda x: x[0])
 
@@ -1037,3 +1042,37 @@ def add_positional_features(tensor: torch.Tensor,
         # to add a row of zeros to make up the difference.
         sinusoids = torch.cat([sinusoids, Variable(sinusoids.data.new(timesteps, 1).fill_(0))], 1)
     return tensor + sinusoids.unsqueeze(0)
+
+def clone(module: torch.nn.Module, num_copies: int) -> torch.nn.ModuleList:
+    "Produce N identical layers."
+    return torch.nn.ModuleList([copy.deepcopy(module) for _ in range(num_copies)])
+
+
+def combine_initial_dims(tensor: torch.Tensor) -> torch.Tensor:
+    """
+    Given a (possibly higher order) tensor of ids with shape
+    (d1, ..., dn, sequence_length)
+    Return a view that's (d1 * ... * dn, sequence_length).
+    If original tensor is 1-d or 2-d, return it as is.
+    """
+    if tensor.dim() <= 2:
+        return tensor
+    else:
+        return tensor.view(-1, tensor.size(-1))
+
+
+def uncombine_initial_dims(tensor: torch.Tensor, original_size: torch.Size) -> torch.Tensor:
+    """
+    Given a tensor of embeddings with shape
+    (d1 * ... * dn, sequence_length, embedding_dim)
+    and the original shape
+    (d1, ..., dn, sequence_length),
+    return the reshaped tensor of embeddings with shape
+    (d1, ..., dn, sequence_length, embedding_dim).
+    If original size is 1-d or 2-d, return it as is.
+    """
+    if len(original_size) <= 2:
+        return tensor
+    else:
+        view_args = list(original_size) + [tensor.size(-1)]
+        return tensor.view(*view_args)
