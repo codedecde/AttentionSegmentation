@@ -3,6 +3,7 @@ import itertools
 import logging
 import logging
 import re
+import pdb
 
 from overrides import overrides
 
@@ -76,7 +77,8 @@ class WeakConll2003DatasetReader(DatasetReader):
                  lazy: bool = False,
                  convert_numbers: bool = False,
                  coding_scheme: str = "IOB1",
-                 label_indexer: LabelIndexer = None) -> None:
+                 label_indexer: LabelIndexer = None,
+                 max_sentence_length: int = -1) -> None:
         super(WeakConll2003DatasetReader, self).__init__(lazy)
         self._token_indexers = token_indexers or {
             'tokens': SingleIdTokenIndexer()}
@@ -94,6 +96,7 @@ class WeakConll2003DatasetReader(DatasetReader):
         self.tag_label = tag_label
         self.feature_labels = set(feature_labels)
         self.coding_scheme = coding_scheme
+        self.max_sentence_length = max_sentence_length
 
         self.label_indexer = label_indexer
         self.convert_numbers = convert_numbers
@@ -104,6 +107,7 @@ class WeakConll2003DatasetReader(DatasetReader):
     @overrides
     def _read(self, file_path: str) -> Iterable[Instance]:
         # if `file_path` is a URL, redirect to the cache
+        instances = []
         with open(file_path, "r") as data_file:
             logger.info(
                 "Reading instances from lines in file at: %s", file_path)
@@ -115,9 +119,31 @@ class WeakConll2003DatasetReader(DatasetReader):
                 if not is_divider:
                     fields = [line.strip().split() for line in lines]
                     # unzipping trick returns tuples, but our Fields need lists
-                    tokens, pos_tags, chunk_tags, ner_tags = [
+                    tokens, pos_tags, chunk_tags, ner_tags = \
+                        None, None, None, None
+                    unzipped_fields = [
                         list(field) for field in zip(*fields)
                     ]
+                    # pdb.set_trace()
+                    if self.max_sentence_length > 0 and \
+                        self.max_sentence_length < len(unzipped_fields[0]):
+                        logger.warning(
+                            f"Found sentence length: {len(unzipped_fields[0])} "
+                            f"in file {file_path}, which is greater that set "
+                            f"max sentence length of {self.max_sentence_length}."
+                            f" Splitting"
+                        )
+                    if len(unzipped_fields) == 4:
+                        # English provides all 4
+                        tokens, pos_tags, chunk_tags, ner_tags = \
+                            unzipped_fields
+                    elif len(unzipped_fields) == 3:
+                        # The other languages don't provide coarse chunking
+                        tokens, pos_tags, ner_tags = unzipped_fields
+                    else:
+                        raise RuntimeError(
+                            f"Found length {len(unzipped_fields)}"
+                        )
                     # TextField requires ``Token`` objects
                     new_tokens = []
                     for token in tokens:
@@ -126,45 +152,75 @@ class WeakConll2003DatasetReader(DatasetReader):
                             # if re.match(r"^[0-9]+$", token):
                             #     token = NUM_TOKEN
                         new_tokens.append(Token(token))
-                    # tokens = [Token(token) for token in tokens]
-                    sequence = TextField(new_tokens, self._token_indexers)
+                    stepsize = self.max_sentence_length if \
+                        self.max_sentence_length > 0 else \
+                        len(unzipped_fields[0])
+                    for ix in range(0, len(new_tokens), stepsize):
+                        sequence = TextField(
+                            new_tokens[ix: ix + stepsize],
+                            self._token_indexers
+                        )
+                        instance_fields: Dict[str, Field] = {
+                            'tokens': sequence
+                        }
+                        # Recode the labels if necessary.
+                        coded_chunks = None
+                        if self.coding_scheme == "BIOUL":
+                            if chunk_tags is not None:
+                                coded_chunks = iob1_to_bioul(
+                                    chunk_tags[ix: ix + stepsize])
+                            coded_ner = iob1_to_bioul(
+                                ner_tags[ix: ix + stepsize])
+                        else:
+                            # the default IOB1
+                            if chunk_tags is not None:
+                                coded_chunks = chunk_tags[ix: ix + stepsize]
+                            coded_ner = ner_tags[ix: ix + stepsize]
 
-                    instance_fields: Dict[str, Field] = {'tokens': sequence}
+                        # Add "feature labels" to instance
+                        if 'pos' in self.feature_labels:
+                            instance_fields['pos_tags'] = SequenceLabelField(
+                                pos_tags[ix: ix + stepsize],
+                                sequence, "pos_tags")
+                        if 'chunk' in self.feature_labels:
+                            instance_fields['chunk_tags'] = SequenceLabelField(
+                                coded_chunks,
+                                sequence, "chunk_tags")
+                        if 'ner' in self.feature_labels:
+                            instance_fields['ner_tags'] = SequenceLabelField(
+                                coded_ner,
+                                sequence, "ner_tags")
 
-                    # Recode the labels if necessary.
-                    if self.coding_scheme == "BIOUL":
-                        coded_chunks = iob1_to_bioul(chunk_tags)
-                        coded_ner = iob1_to_bioul(ner_tags)
-                    else:
-                        # the default IOB1
-                        coded_chunks = chunk_tags
-                        coded_ner = ner_tags
-
-                    # Add "feature labels" to instance
-                    if 'pos' in self.feature_labels:
-                        instance_fields['pos_tags'] = SequenceLabelField(
-                            pos_tags, sequence, "pos_tags")
-                    if 'chunk' in self.feature_labels:
-                        instance_fields['chunk_tags'] = SequenceLabelField(
-                            coded_chunks, sequence, "chunk_tags")
-                    if 'ner' in self.feature_labels:
-                        instance_fields['ner_tags'] = SequenceLabelField(
-                            coded_ner, sequence, "ner_tags")
-
-                    # Add "tag label" to instance
-                    if self.tag_label == 'ner':
-                        instance_fields['tags'] = SequenceLabelField(
-                            coded_ner, sequence)
-                    elif self.tag_label == 'pos':
-                        instance_fields['tags'] = SequenceLabelField(
-                            pos_tags, sequence)
-                    elif self.tag_label == 'chunk':
-                        instance_fields['tags'] = SequenceLabelField(
-                            coded_chunks, sequence)
-                    if self.label_indexer is not None:
-                        instance_fields["labels"] = self.label_indexer.index(
-                            ner_tags, as_label_field=True)
-                    yield Instance(instance_fields)
+                        # Add "tag label" to instance
+                        if self.tag_label == 'ner':
+                            try:
+                                instance_fields['tags'] = SequenceLabelField(
+                                    coded_ner, sequence)
+                            except Exception as e:
+                                import pdb; pdb.set_trace()
+                        elif self.tag_label == 'pos':
+                            instance_fields['tags'] = SequenceLabelField(
+                                pos_tags, sequence)
+                        elif self.tag_label == 'chunk':
+                            instance_fields['tags'] = SequenceLabelField(
+                                coded_chunks, sequence)
+                        if self.label_indexer is not None:
+                            instance_fields["labels"] = \
+                                self.label_indexer.index(
+                                coded_ner,
+                                as_label_field=True
+                            )
+                        instances.append(Instance(instance_fields))
+        
+        for ix, instance in enumerate(instances):
+            assert len(instance.fields["tokens"].tokens) == len(instance.fields["tags"].labels)
+            if self.max_sentence_length > 0:
+                assert len(instance.fields["tokens"].tokens) <= self.max_sentence_length
+            if instance.fields["tags"].labels[0].startswith("I-"):
+                logger.info(f"Made correction in {file_path}")
+                instance.fields["tags"].labels[0] = \
+                    re.sub("I-", "B-", instance.fields["tags"].labels[0])
+        return instances
 
     @classmethod
     @overrides
@@ -180,6 +236,7 @@ class WeakConll2003DatasetReader(DatasetReader):
         if label_indexer_params is not None:
             label_indexer = LabelIndexer.from_params(label_indexer_params)
         convert_numbers = params.pop("convert_numbers", False)
+        max_sentence_length = params.pop("max_sentence_length", -1)
         params.assert_empty(cls.__name__)
         return WeakConll2003DatasetReader(token_indexers=token_indexers,
                                           tag_label=tag_label,
@@ -187,4 +244,5 @@ class WeakConll2003DatasetReader(DatasetReader):
                                           lazy=lazy,
                                           convert_numbers=convert_numbers,
                                           coding_scheme=coding_scheme,
-                                          label_indexer=label_indexer)
+                                          label_indexer=label_indexer,
+                                          max_sentence_length=max_sentence_length)
