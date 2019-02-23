@@ -35,6 +35,7 @@ from AttentionSegmentation.commons.trainer_utils import is_sparse,\
 # from AttentionSegmentation.visualization.visualize_attns \
 #     import html_visualizer
 from AttentionSegmentation.model.attn2labels import BasePredictionClass
+from AttentionSegmentation.commons.custom_iterators import CustomIterator
 logger = logging.getLogger(__name__)
 
 TQDM_COLUMNS = 200
@@ -44,10 +45,10 @@ class Trainer(object):
     def __init__(self,
                  model: Model,
                  optimizer: torch.optim.Optimizer,
-                 iterator: DataIterator,
-                 train_dataset: Iterable[Instance],
-                 validation_dataset: Optional[Iterable[Instance]] = None,
-                 segmenter: Optional[BasePredictionClass] = None,
+                 iterator: CustomIterator,
+                 train_dataset: Dict[str, Iterable[Instance]],
+                 validation_dataset: Optional[Dict[str, Iterable[Instance]]] = None,
+                 segmenter: Optional[Dict[BasePredictionClass]] = None,
                  patience: Optional[int] = None,
                  validation_metric: str = "-loss",
                  num_epochs: int = 20,

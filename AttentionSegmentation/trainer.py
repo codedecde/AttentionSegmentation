@@ -70,100 +70,24 @@ class Trainer(common_trainer.Trainer):
         model_state = torch.load(model_path,
                                  map_location=util.device_mapping(-1))
         self._model.load_state_dict(model_state)
-        loss, num_batches = self._inference_loss(data, logger_string="Testing")
-        metrics = self._get_metrics(loss, num_batches, reset=True)
-        logger.info("Testing Results now")
-        writebuf = self._description_from_metrics(metrics)
-        logger.info(writebuf)
-        if self._segmenter is not None:
-            prediction_file = os.path.join(
-                self._base_dir, "test_predictions.json")
-            visualization_file = os.path.join(
-                self._base_dir, "visualization", "test.html")
-            self._segmenter.get_predictions(
-                instances=data,
-                model=self._model,
-                cuda_device=self._iterator_device,
-                prediction_file=prediction_file,
-                visualization_file=visualization_file,
-                verbose=True)
-
-    @overrides
-    def _batch_loss(self, batch: torch.Tensor,
-                    for_training: bool) -> torch.Tensor:
-        """Does a forward pass on the given batch
-        and returns the ``loss`` value in the result.
-        If ``for_training`` is `True` also applies regularization penalty.
-        """
-        if self._multiple_gpu:
-            output_dict = self._data_parallel(batch)
-        else:
-            output_dict = self._model(**batch)
-
-        if not for_training:
-            thresh = np.log(0.5)
-            num_zero_preds = (
-                output_dict['log_probs'].gt(thresh).long() == 0).sum().item()
-            self._zero_counts["zero"] += num_zero_preds
-            self._zero_counts["num_preds"] += output_dict['log_probs'].numel()
-        try:
-            loss = output_dict["loss"]
-            if for_training:
-                loss += self._model.get_regularization_penalty()
-        except KeyError:
-            if for_training:
-                raise RuntimeError("The model you are trying to optimize does not contain a"
-                                   " 'loss' key in the output of model.forward(inputs).")
-            loss = None
-
-        return loss
-
-    @overrides
-    def _inference_loss(self, data,
-                        logger_string="validation") -> Tuple[float, int]:
-        """Computes the loss on the data passed.
-        Returns it and the number of batches.
-        Is primarily used for validation and testing
-        """
-        logger.info("Starting with {0}".format(logger_string))
-
-        self._model.eval()
-
-        inference_generator = self._iterator(data,
-                                             num_epochs=1,
-                                             cuda_device=self._iterator_device,
-                                             for_training=False)
-        num_batches = self._iterator.get_num_batches(data)
-        inference_generator_tqdm = Tqdm.tqdm(inference_generator,
-                                             total=num_batches
-                                             )
-        batches_this_epoch = 0
-        inference_loss = 0
-        self._reset_counter()
-        for batch in inference_generator_tqdm:
-
-            loss = self._batch_loss(batch, for_training=False)
-            if loss is not None:
-                # You shouldn't necessarily have to compute a loss for validation, so we allow for
-                # `loss` to be None.  We need to be careful, though - `batches_this_epoch` is
-                # currently only used as the divisor for the loss function, so we can safely only
-                # count those batches for which we actually have a loss.  If this variable ever
-                # gets used for something else, we might need to change things around a bit.
-                batches_this_epoch += 1
-                inference_loss += loss.data.cpu().numpy()
-
-            # Update the description with the latest metrics
-            inference_metrics = self._get_metrics(
-                inference_loss, batches_this_epoch)
-            description = self._description_from_metrics(inference_metrics)
-            inference_generator_tqdm.set_description(
-                description, refresh=False)
-        num_zero_preds = self._zero_counts["zero"]
-        num_preds = self._zero_counts["num_preds"]
-        logger.info("{0} done. ({1} / {2}) zero predicted".format(
-            logger_string, num_zero_preds, num_preds))
-
-        return inference_loss, batches_this_epoch
+        # FIXME: IMPLEMENT THIS
+        # loss, num_batches = self._inference_loss(data, logger_string="Testing")
+        # metrics = self._get_metrics(loss, num_batches, reset=True)
+        # logger.info("Testing Results now")
+        # writebuf = self._description_from_metrics(metrics)
+        # logger.info(writebuf)
+        # if self._segmenter is not None:
+        #     prediction_file = os.path.join(
+        #         self._base_dir, "test_predictions.json")
+        #     visualization_file = os.path.join(
+        #         self._base_dir, "visualization", "test.html")
+        #     self._segmenter.get_predictions(
+        #         instances=data,
+        #         model=self._model,
+        #         cuda_device=self._iterator_device,
+        #         prediction_file=prediction_file,
+        #         visualization_file=visualization_file,
+        #         verbose=True)
 
     @classmethod
     @overrides
