@@ -306,6 +306,7 @@ class MultiClassifier(Model):
     def forward(
         self,
         tokens: Dict[str, LongTensor],
+        attn_mask: Dict[str, LongTensor],
         labels: LongTensor = None,
         tags: LongTensor = None,
         **kwargs
@@ -348,13 +349,14 @@ class MultiClassifier(Model):
             raise NotImplementedError("Don't handle features yet")
         emb_msg = self.text_field_embedder(tokens)
         mask = util.get_text_field_mask(tokens)  # num_sents x S
+        attns_mask = attn_mask["tokens"]
         encoded_msg = self.encoder_word(emb_msg, mask)
         attentions = []
         sent_embs = []
         for ix in range(self.num_labels - 1):
             tag = self.label_indexer.get_tag(ix)
             sent_emb, sent_attn = getattr(self, f"attn_{tag}")(
-                encoded_msg, mask)
+                encoded_msg, mask, attns_mask)
             '''
                 sent_emb: batch x embed_dim
                 sent_attns: batch x T

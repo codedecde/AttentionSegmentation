@@ -14,11 +14,13 @@ from allennlp.common.checks import ConfigurationError
 from allennlp.data.dataset_readers \
     import Conll2003DatasetReader, DatasetReader
 from allennlp.data.instance import Instance
-from allennlp.data.token_indexers import TokenIndexer
+from allennlp.data.token_indexers import TokenIndexer, SingleIdTokenIndexer
 from allennlp.data.tokenizers import Token
 from allennlp.data.fields \
     import MultiLabelField, TextField, SequenceLabelField
+
 from AttentionSegmentation.reader.label_indexer import LabelIndexer
+import AttentionSegmentation.commons.constants as constants
 
 
 logger = logging.getLogger(__name__)
@@ -78,7 +80,8 @@ class WeakConll2003DatasetReader(DatasetReader):
                  convert_numbers: bool = False,
                  coding_scheme: str = "IOB1",
                  label_indexer: LabelIndexer = None,
-                 max_sentence_length: int = -1) -> None:
+                 max_sentence_length: int = -1,
+                 mask_set: str = None) -> None:
         super(WeakConll2003DatasetReader, self).__init__(lazy)
         self._token_indexers = token_indexers or {
             'tokens': SingleIdTokenIndexer()}
@@ -100,6 +103,12 @@ class WeakConll2003DatasetReader(DatasetReader):
 
         self.label_indexer = label_indexer
         self.convert_numbers = convert_numbers
+        self._mask_set = set()
+        self._mask_token_indexer = {
+            "tokens": SingleIdTokenIndexer()
+        }
+        if mask_set is not None:
+            self._mask_set = getattr(constants, mask_set)
 
     def get_label_indexer(self):
         return self.label_indexer
@@ -146,12 +155,16 @@ class WeakConll2003DatasetReader(DatasetReader):
                         )
                     # TextField requires ``Token`` objects
                     new_tokens = []
+                    mask_tokens = []
                     for token in tokens:
                         if self.convert_numbers:
                             token = re.sub(r"[0-9]+", NUM_TOKEN, token)
-                            # if re.match(r"^[0-9]+$", token):
-                            #     token = NUM_TOKEN
                         new_tokens.append(Token(token))
+                        mask_tok = Token(text=token)
+                        mask_tok.text_id = 1 \
+                            if mask_tok.text.lower() in self._mask_set \
+                            else 0
+                        mask_tokens.append(mask_tok)
                     stepsize = self.max_sentence_length if \
                         self.max_sentence_length > 0 else \
                         len(unzipped_fields[0])
@@ -160,8 +173,13 @@ class WeakConll2003DatasetReader(DatasetReader):
                             new_tokens[ix: ix + stepsize],
                             self._token_indexers
                         )
+                        attn_mask_seq = TextField(
+                            mask_tokens[ix: ix + stepsize],
+                            self._mask_token_indexer
+                        )
                         instance_fields: Dict[str, Field] = {
-                            'tokens': sequence
+                            'tokens': sequence,
+                            'attn_mask': attn_mask_seq
                         }
                         # Recode the labels if necessary.
                         coded_chunks = None
@@ -237,6 +255,7 @@ class WeakConll2003DatasetReader(DatasetReader):
             label_indexer = LabelIndexer.from_params(label_indexer_params)
         convert_numbers = params.pop("convert_numbers", False)
         max_sentence_length = params.pop("max_sentence_length", -1)
+        mask_set = params.pop("mask_set", None)
         params.assert_empty(cls.__name__)
         return WeakConll2003DatasetReader(token_indexers=token_indexers,
                                           tag_label=tag_label,
@@ -245,4 +264,5 @@ class WeakConll2003DatasetReader(DatasetReader):
                                           convert_numbers=convert_numbers,
                                           coding_scheme=coding_scheme,
                                           label_indexer=label_indexer,
-                                          max_sentence_length=max_sentence_length)
+                                          max_sentence_length=max_sentence_length,
+                                          mask_set=mask_set)

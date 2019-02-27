@@ -78,7 +78,7 @@ class KeyedAttention(BaseAttention):
         if self.attn_type == "sum":
             self.proj_ctxt_key_matrix = nn.Linear(key_dim, 1)
 
-    def forward(self, context, mask):
+    def forward(self, context, mask, attns_mask=None):
         """The forward pass
 
         Arguments:
@@ -111,6 +111,10 @@ class KeyedAttention(BaseAttention):
             float_mask = mask.float()
             negval = -10e5
             logits = (float_mask * logits) + ((1 - float_mask) * negval)
+            if attns_mask is not None:
+                # Mask out the masked tokens
+                attns_mask = attns_mask.float()
+                logits = (logits * (1. - attns_mask)) + (negval * attns_mask)
         attn_weights = F.softmax(logits, -1).unsqueeze(1)
         if self._dropout is not None:
             attn_weights = self._dropout(attn_weights)
