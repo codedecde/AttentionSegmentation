@@ -4,6 +4,7 @@ import torch
 from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
+import pdb
 
 from allennlp.common.params import Params
 
@@ -64,7 +65,7 @@ class KeyedAttention(BaseAttention):
     """
 
     def __init__(self, key_dim, ctxt_dim, attn_type, dropout=0.0,
-                 temperature=1.):
+                 temperature=1., use_sentinel=False):
         super(KeyedAttention, self).__init__(
             input_emb_size=ctxt_dim,
             key_emb_size=key_dim,
@@ -73,6 +74,10 @@ class KeyedAttention(BaseAttention):
         self.attn_type = attn_type
         self.proj_ctxt = nn.Linear(ctxt_dim, key_dim)
         self.key = nn.Parameter(torch.Tensor(key_dim, 1).uniform_(-0.01, 0.01))
+        self.use_sentinel = use_sentinel
+        if use_sentinel:
+            self.sentinel_emb = nn.Parameter(
+                torch.Tensor(ctxt_dim).uniform_(-0.01, 0.01))
         self._dropout = nn.Dropout(p=dropout) if dropout != 0. else None
         self.temperature = temperature
         if self.attn_type == "sum":
@@ -96,7 +101,39 @@ class KeyedAttention(BaseAttention):
             The attention weights
 
         """
-        proj_ctxt = self.proj_ctxt(context)  # batch x seq_len x key_dim
+        new_ctxt = None
+        new_mask = None
+        new_attns_mask = None
+        if self.use_sentinel:
+            batch, seq_len, ctxt_dim = context.size()
+            new_ctxt = torch.zeros(batch, seq_len + 1, ctxt_dim)
+            new_ctxt.requires_grad = context.requires_grad
+            if context.is_cuda:
+                new_ctxt = new_ctxt.cuda()
+            new_ctxt[:, :-1, :] = context
+            new_ctxt[:, -1, :] = context[:, -1, :]
+            if mask is not None:
+                new_mask = torch.zeros(batch, seq_len + 1)
+                new_mask.requires_grad = mask.requires_grad
+                if mask.is_cuda:
+                    new_mask = new_mask.cuda()
+                new_mask[:, :-1] = mask
+                lengths = mask.sum(-1)
+                for ix in range(batch):
+                    new_ctxt[ix, lengths[ix], :] = self.sentinel_emb
+                    new_mask[ix, lengths[ix]] = 1
+                # Now the attn masks
+                if attns_mask is not None:
+                    new_attns_mask = torch.zeros(batch, seq_len + 1)
+                    new_attns_mask.requires_grad = attns_mask.requires_grad
+                    if attns_mask.is_cuda:
+                        new_attns_mask = new_attns_mask.cuda()
+                    new_attns_mask[:, :-1] = attns_mask
+        else:
+            new_ctxt = context
+            new_mask = mask
+            new_attns_mask = attns_mask
+        proj_ctxt = self.proj_ctxt(new_ctxt)  # batch x seq_len x key_dim
         if self.attn_type == "dot":
             batch, seq_len, key_dim = proj_ctxt.size()
             scores = torch.mm(proj_ctxt.view(-1, key_dim), self.key)
@@ -107,19 +144,18 @@ class KeyedAttention(BaseAttention):
             ctxt_key_matrix = torch.tanh(expanded_key + proj_ctxt)
             logits = self.proj_ctxt_key_matrix(ctxt_key_matrix).squeeze(-1)
         logits /= self.temperature
-        if mask is not None:
-            float_mask = mask.float()
+        if new_mask is not None:
+            float_mask = new_mask.float()
             negval = -10e5
             logits = (float_mask * logits) + ((1 - float_mask) * negval)
-            if attns_mask is not None:
+            if new_attns_mask is not None:
                 # Mask out the masked tokens
-                attns_mask = attns_mask.float()
-                logits = (logits * (1. - attns_mask)) + (negval * attns_mask)
+                new_attns_mask = new_attns_mask.float()
+                logits = (logits * (1. - new_attns_mask)) + (negval * new_attns_mask)
         attn_weights = F.softmax(logits, -1).unsqueeze(1)
         if self._dropout is not None:
             attn_weights = self._dropout(attn_weights)
-        weighted_emb = torch.bmm(attn_weights, context).squeeze(1)
-
+        weighted_emb = torch.bmm(attn_weights, new_ctxt).squeeze(1)
         return weighted_emb, attn_weights.squeeze(1)
 
     @classmethod
@@ -131,13 +167,15 @@ class KeyedAttention(BaseAttention):
         attn_type = params.pop("attn_type")
         dropout = params.pop("dropout", 0.0)
         temperature = params.pop("temperature", 1.0)
+        use_sentinel = params.pop("use_sentinel", False)
         params.assert_empty(cls.__name__)
         return cls(
             key_dim=key_dim,
             ctxt_dim=ctxt_emb_size,
             attn_type=attn_type,
             dropout=dropout,
-            temperature=temperature
+            temperature=temperature,
+            use_sentinel=use_sentinel
         )
 
 
