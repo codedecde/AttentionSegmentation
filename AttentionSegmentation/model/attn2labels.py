@@ -5,6 +5,7 @@ import json
 import pdb
 from overrides import overrides
 import logging
+from copy import deepcopy
 
 from allennlp.data.iterators import BasicIterator
 from allennlp.data.instance import Instance
@@ -131,7 +132,7 @@ class BasePredictionClass(object):
             output_dict = model.decode(model(**batch))
             for ix in range(len(output_dict["preds"])):
                 text = self._get_text_from_instance(instances[index])
-                pred = [x[0] for x in output_dict["preds"][ix]]
+                pred = output_dict["preds"][ix]
                 gold = [self._indexer.get_tag(label)
                         for label in instances[index].fields['labels'].labels
                         ]
@@ -141,7 +142,7 @@ class BasePredictionClass(object):
                 gold_labels = self._indexer.extract_relevant(gold_labels)
                 pred_labels = self.get_segmentation_from_prediction(
                     text=text,
-                    preds=pred,
+                    preds_probs=pred,
                     attns=attn
                 )
                 assert len(pred_labels) == len(gold_labels) == len(text)
@@ -154,7 +155,7 @@ class BasePredictionClass(object):
                         continue
                     correct_counts[t] += 1.
                 preds = [
-                    [x[0], float(x[1])] for x in output_dict["preds"][ix]
+                    [x[0], float(x[1])] for x in pred
                 ]
                 prediction = {
                     "text": text,
@@ -237,16 +238,27 @@ class BasicMultiPredictions(BasePredictionClass):
     def __init__(self,
                  vocab, reader,
                  visualize=False,
-                 tol=0.01, use_prod=False):
+                 tol=0.01, use_probs=False):
         super(BasicMultiPredictions, self).__init__(
             vocab, reader, visualize)
         self._tol = tol
-        self._use_prod = use_prod
+        self._use_probs = use_probs
 
     @overrides
     def get_segmentation_from_prediction(
-        self, preds, attns, text, **kwargs
+        self, preds_probs, attns, text, **kwargs
     ):
+        attns = deepcopy(attns)
+        preds = []
+        lbl_probs = {}
+        for pred, lbl_prob in preds_probs:
+            preds.append(pred)
+            if pred != "O":
+                lbl_probs[pred] = lbl_prob
+        if self._use_probs:
+            for lbl in lbl_probs:
+                for ix in range(len(attns[lbl])):
+                    attns[lbl][ix] *= lbl_probs[lbl]
         if "O" in preds:
             assert len(preds) == 1
             pred_labels = ["O" for _ in range(len(text))]
@@ -276,10 +288,11 @@ class BasicMultiPredictions(BasePredictionClass):
     def from_params(cls, vocab, reader, params):
         tol = params.pop("tol", 0.01)
         visualize = params.pop("visualize", False)
+        use_probs = params.pop("use_probs", False)
         params.assert_empty(cls.__name__)
         return cls(vocab=vocab,
                    reader=reader,
-                   visualize=visualize, tol=tol)
+                   visualize=visualize, tol=tol, use_probs=use_probs)
 
 
 class SymbolFilteredBinaryPredictions(BasicBinaryPredictions):
@@ -321,9 +334,9 @@ class SymbolFilteredMultiPredictions(BasicMultiPredictions):
                  vocab, reader,
                  visualize=False,
                  tol=0.01,
-                 use_prod=False):
+                 use_probs=False):
         super(SymbolFilteredMultiPredictions, self).__init__(
-            vocab, reader, visualize, tol, use_prod)
+            vocab, reader, visualize, tol, use_probs)
         self._punct_set = set([".", ",", "!", "-", "?", "'", ")", "("])
 
     @overrides
@@ -337,9 +350,14 @@ class SymbolStopwordFilteredMultiPredictions(BasicMultiPredictions):
                  vocab, reader,
                  visualize=False,
                  tol=0.01,
-                 use_prod=False):
+                 use_probs=False):
         super(SymbolStopwordFilteredMultiPredictions, self).__init__(
-            vocab, reader, visualize, tol, use_prod)
+            vocab=vocab,
+            reader=reader,
+            visualize=visualize,
+            tol=tol,
+            use_probs=use_probs
+        )
         stopword_list = stopwords.words("english")
         stop_set = set(stopword_list)
         punct_set = set([".", ",", "!", "-", "?", "'", ")", "("])
