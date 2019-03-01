@@ -90,6 +90,7 @@ def main():
     if TEST_PATH is not None:
         logger.info("Loading Test Data from {0}".format(TEST_PATH))
         instances_test = reader.read(TEST_PATH)
+        instances_test = instances_test
         logger.info("Length of {0}: {1}".format(
             "Testing Data", len(instances_test)))
 

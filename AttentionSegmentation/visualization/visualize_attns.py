@@ -42,7 +42,8 @@ def strip(string):
 def get_html_from_pred(pred):
     writebuf = []
     for ix in range(len(pred["text"])):
-        pred_label = strip(pred["pred_labels"][ix])
+        pred_label, pred_prob = strip(
+            pred["pred_labels"][ix][0]), pred["pred_labels"][ix][1]
         gold_label = strip(pred["gold_labels"][ix])
         correct = False
         if pred_label == gold_label:

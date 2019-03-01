@@ -8,6 +8,7 @@ from copy import deepcopy
 from torch.nn import Linear
 import torch.nn.functional as F
 from torch import Tensor, LongTensor
+import logging
 import pdb
 
 # import AttentionSegmentation.model as Attns
@@ -27,6 +28,8 @@ from AttentionSegmentation.reader.label_indexer import LabelIndexer
 from AttentionSegmentation.commons.utils import to_numpy
 import AttentionSegmentation.model as Attns
 from AttentionSegmentation.model.metrics import ClassificationMetrics
+
+logger = logging.getLogger(__name__)
 
 
 class Classifier(Model):
@@ -434,6 +437,8 @@ class MultiClassifier(Model):
         lengths = outputs["mask"].sum(-1)
         lengths = to_numpy(lengths, lengths.is_cuda)
         predictions = to_numpy(outputs["preds"], outputs["preds"].is_cuda)
+        log_probs = to_numpy(
+            outputs["log_probs"], outputs["log_probs"].is_cuda)
         attentions = to_numpy(
             outputs["attentions"], outputs["attentions"].is_cuda)
         for ix in range(lengths.size):
@@ -441,13 +446,16 @@ class MultiClassifier(Model):
             pred_list = []
             for kx in range(non_zero_indices.shape[0]):
                 pred_list.append(
-                    self.label_indexer.get_tag(
-                        non_zero_indices[kx]
-                    )
+                    [
+                        self.label_indexer.get_tag(
+                            non_zero_indices[kx]
+                        ),
+                        np.exp(log_probs[ix, non_zero_indices[kx]])
+                    ]
                 )
 
             if len(pred_list) == 0:
-                pred_list.append("O")
+                pred_list.append(["O", 1.0])
             decoded_output["preds"].append(pred_list)
             attention = OrderedDict()
             for jx in range(attentions[ix].shape[-1]):

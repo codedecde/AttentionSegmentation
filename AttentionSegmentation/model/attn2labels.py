@@ -90,8 +90,9 @@ class BasePredictionClass(object):
             predictions (List[Dict]) : The predictions. Each contains the
                 following keys
                 * text (List[str]): The tokens
-                * pred (List[str]): The predicted labels
-                    can potentially have multiple labels being predicted
+                * pred (List[Tuple[str, float]]): The predicted labels and
+                    probs. Can potentially have multiple labels being
+                    predicted
                 * gold (List[str]): The gold labels
                     can potentially have multiple gold labels
                 * pred_labels (List[str]): Predicted labels for segmentation
@@ -130,7 +131,7 @@ class BasePredictionClass(object):
             output_dict = model.decode(model(**batch))
             for ix in range(len(output_dict["preds"])):
                 text = self._get_text_from_instance(instances[index])
-                pred = output_dict["preds"][ix]
+                pred = [x[0] for x in output_dict["preds"][ix]]
                 gold = [self._indexer.get_tag(label)
                         for label in instances[index].fields['labels'].labels
                         ]
@@ -152,10 +153,12 @@ class BasePredictionClass(object):
                             t in pred and t not in gold:
                         continue
                     correct_counts[t] += 1.
-
+                preds = [
+                    [x[0], float(x[1])] for x in output_dict["preds"][ix]
+                ]
                 prediction = {
                     "text": text,
-                    "pred": pred,
+                    "pred": preds,
                     "gold": gold,
                     "attn": attn,
                     "pred_labels": pred_labels,

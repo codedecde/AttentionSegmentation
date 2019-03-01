@@ -14,6 +14,7 @@ import re
 
 from allennlp.common.tqdm import Tqdm
 from allennlp.common.params import Params
+from allennlp.models.model import remove_pretrained_embedding_params
 from allennlp.data.fields \
     import TextField, MultiLabelField
 from allennlp.nn import util
@@ -93,11 +94,9 @@ class BaseModelRunner(object):
                     elmo_params["options_file"] = complete_options_file
                     elmo_params["weight_file"] = complete_weight_file
 
-        text_field_embedder = model_params.get("text_field_embedder", None)
-        if text_field_embedder is not None:
-            tokens = text_field_embedder.get("tokens", None)
-            if tokens is not None:
-                tokens.pop("pretrained_file", None)
+        remove_pretrained_embedding_params(
+            model_params
+        )
         assert model_type is not None and hasattr(Models, model_type),\
             f"Cannot find reader {model_type}"
         self._model = getattr(Models, model_type).from_params(
@@ -108,6 +107,22 @@ class BaseModelRunner(object):
         logger.info("Loading Model")
         model_state = torch.load(model_path,
                                  map_location=util.device_mapping(-1))
+        old_keys = []
+        new_keys = []
+        for key in model_state.keys():
+            new_key = None
+            if "gamma" in key:
+                # FIXME : Make this regex based
+                new_key = key.replace("gamma", "weight")
+            if "beta" in key:
+                new_key = key.replace("beta", "bias")
+            if new_key:
+                old_keys.append(key)
+                new_keys.append(new_key)
+        # pdb.set_trace()
+        # for old_key, new_key in zip(old_keys, new_keys):
+        #     model_state[new_key] = model_state.pop(old_key)
+        # pdb.set_trace()
         self._model.load_state_dict(model_state)
         logger.info("Model Loaded")
         self._num_labels = self._reader.get_label_indexer().get_num_tags()
@@ -125,7 +140,6 @@ class BaseModelRunner(object):
             self._cuda_device = trainer_params.pop_int("cuda_device", -1)
         if self._cuda_device != -1:
             self._model.cuda(self._cuda_device)
-
 
     def generate_preds_from_file(self, filename: str):
         raise NotImplementedError("Child class has to implement this")
