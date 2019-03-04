@@ -119,14 +119,12 @@ class BasePredictionClass(object):
         inference_generator_tqdm = Tqdm.tqdm(iterator, total=num_batches)
         predictions = []
         index = 0
-        correct_counts = {
-            self._indexer.ix2tags[ix]: 0 for ix in range(len(
-                self._indexer.ix2tags))
+        matrix = {
+            self._indexer.ix2tags[ix]: {
+                "tp": 0., "fp": 0, "fn": 0., "tn": 0.
+            } for ix in range(len(self._indexer.ix2tags))
         }
-        all_counts = {
-            self._indexer.ix2tags[ix]: 0 for ix in range(len(
-                self._indexer.ix2tags))
-        }
+
         for batch in inference_generator_tqdm:
             # Currently I don't support multi-gpu data parallel
             output_dict = model.decode(model(**batch))
@@ -146,14 +144,18 @@ class BasePredictionClass(object):
                     attns=attn
                 )
                 assert len(pred_labels) == len(gold_labels) == len(text)
-                for t in all_counts:
-                    all_counts[t] += 1.
-
-                for t in correct_counts:
-                    if t not in pred and t in gold or \
-                            t in pred and t not in gold:
-                        continue
-                    correct_counts[t] += 1.
+                gold_set = set(gold)
+                pred_set, _ = [set(list(x)) for x in zip(*pred)]
+                # import pdb; pdb.set_trace()
+                for tag in matrix:
+                    if tag in gold_set and tag in pred_set:
+                        matrix[tag]["tp"] += 1
+                    elif tag not in gold_set and tag in pred_set:
+                        matrix[tag]["fp"] += 1
+                    elif tag in gold_set and tag not in pred_set:
+                        matrix[tag]["fn"] += 1.
+                    else:
+                        matrix[tag]["tn"] += 1.
                 preds = [
                     [x[0], float(x[1])] for x in pred
                 ]
@@ -174,9 +176,14 @@ class BasePredictionClass(object):
                 visualization_file != "":
             self.visualize(predictions, visualization_file)
         if verbose:
-            for p in all_counts:
-                acc = correct_counts[p] / all_counts[p] * 100.
-                logger.info(f"Tag: {p}, Acc: {acc:.2f}")
+            accs = []
+            for tag in matrix:
+                acc = (matrix[tag]["tp"] + matrix[tag]["tn"]) / \
+                    sum(matrix[tag].values()) * 100.
+                logger.info(f"Tag: {tag}, Acc: {acc:.2f}")
+                accs.append(acc)
+            avg_acc = sum(accs) / len(accs)
+            logger.info(f"Average ACC: {avg_acc:.2f}")
             p, r, f = fscore_from_preds(predictions, False)
         return predictions
 

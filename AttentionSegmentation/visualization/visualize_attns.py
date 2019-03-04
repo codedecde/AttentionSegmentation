@@ -42,8 +42,7 @@ def strip(string):
 def get_html_from_pred(pred):
     writebuf = []
     for ix in range(len(pred["text"])):
-        pred_label, pred_prob = strip(
-            pred["pred_labels"][ix][0]), pred["pred_labels"][ix][1]
+        pred_label = strip(pred["pred_labels"][ix])
         gold_label = strip(pred["gold_labels"][ix])
         correct = False
         if pred_label == gold_label:
@@ -92,7 +91,8 @@ def get_html_from_pred(pred):
         writebuf.append("".join(html))
     writebuf.append(" ")
     writebuf.append("[")
-    for t in pred["pred"]:
+    predicted_tags, predicted_probs = [list(x) for x in zip(*pred["pred"])]
+    for t in predicted_tags:
         if t in pred["gold"]:
             writebuf.append(f"<correct>{t} </correct>")
         else:
@@ -101,7 +101,7 @@ def get_html_from_pred(pred):
     writebuf.append(" ")
     writebuf.append("[")
     for t in pred["gold"]:
-        if t in pred["pred"]:
+        if t in predicted_tags:
             writebuf.append(f"<correct>{t} </correct>")
         else:
             writebuf.append(f"<incorrect>{t} </incorrect>")
