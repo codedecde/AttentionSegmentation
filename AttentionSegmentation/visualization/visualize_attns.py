@@ -39,8 +39,9 @@ def strip(string):
     return re.sub(".*-", "", string)
 
 
-def get_html_from_pred(pred):
+def get_html_from_pred(pred, debug=True):
     writebuf = []
+    predicted_tags, predicted_probs = [list(x) for x in zip(*pred["pred"])]
     for ix in range(len(pred["text"])):
         pred_label = strip(pred["pred_labels"][ix])
         gold_label = strip(pred["gold_labels"][ix])
@@ -50,7 +51,7 @@ def get_html_from_pred(pred):
         word = pred["text"][ix]
         html = ['<div class="tooltip">']
         attn_at_point = [(pred["attn"][t][ix], t) for t in pred["attn"]
-                         if t in pred["pred"]]
+                         if t in predicted_tags]
         if len(attn_at_point) == 0:
             attn_weight, tag = max([(pred["attn"][t][ix], t) for t in pred["attn"]])
             attn_hex = str(hex(int(abs(attn_weight) * 255)))[2:]
@@ -61,24 +62,24 @@ def get_html_from_pred(pred):
             attn_hex = str(hex(int(abs(attn_weight) * 255)))[2:]
             attn_color = tag2color[tag] + attn_hex
         html.append('<span style="padding:2px">')
-        if correct and pred_label != "O":
+        if correct and pred_label != "O" and debug:
             html.append('<underline style=text-decoration-color:#8dde28>')
         else:
-            if pred_label != "O":
+            if pred_label != "O" and debug:
                 color = tag2color[pred_label]
                 html.append(f'<overline style="text-decoration-color:{color}">')
-            if gold_label != "O":
+            if gold_label != "O" and debug:
                 color = tag2color[gold_label]
                 html.append(f'<underline style="text-decoration-color:{color}">')
         html.append(f"<span style=background-color:{attn_color}>")
         html.append(word)
         html.append("</span>")
-        if correct and pred != "O":
+        if correct and pred != "O" and debug:
             html.append('</underline>')
         else:
-            if gold_label != "O":
+            if gold_label != "O" and debug:
                 html.append('</underline>')
-            if pred_label != "O":
+            if pred_label != "O" and debug:
                 html.append("</overline>")
         html.append('</span>')
         html.append('<span class="tooltiptext">')
@@ -91,7 +92,7 @@ def get_html_from_pred(pred):
         writebuf.append("".join(html))
     writebuf.append(" ")
     writebuf.append("[")
-    predicted_tags, predicted_probs = [list(x) for x in zip(*pred["pred"])]
+
     for t in predicted_tags:
         if t in pred["gold"]:
             writebuf.append(f"<correct>{t} </correct>")
@@ -110,7 +111,7 @@ def get_html_from_pred(pred):
 
 
 def colorized_predictions_to_webpage(
-        predictions, webpage="visualize.html"):
+        predictions, webpage="visualize.html", debug=True):
     header = (
         '<html>\n'
         '<head>\n'
@@ -177,7 +178,7 @@ def colorized_predictions_to_webpage(
         body.append(text)
     body.append("<br><br>")
     for pred in predictions:
-        html = get_html_from_pred(pred)
+        html = get_html_from_pred(pred, debug=debug)
         body.append(f"{html}<br><br>")
     footer = ["</body></html>"]
     with open(webpage, "w") as f:
