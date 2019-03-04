@@ -26,13 +26,32 @@ colors2rgb['purple'] = '#712f79'  # Pred tag, gold no tag
 colors2rgb['brickRed'] = '#d2405f'  # Pred no tag, gold tag
 colors2rgb['yellowGreen'] = '#e0ff4f'  # Both tag
 
+# tag2color = OrderedDict({
+#     "PER": "#f48fb1",
+#     "ORG": "#ffe5bc",
+#     "LOC": "#ddf9d9",
+#     "MISC": "#add9fe"
+# })
+# color2forecolor = OrderedDict({
+#     "#f48fb1": "black",
+#     "#ffe5bc": "black",
+#     "#ddf9d9": "black",
+#     "#add9fe": "black",
+#     "#3c415e": "black"
+# })
 tag2color = OrderedDict({
-    "PER": "#e88a1a",
-    "ORG": "#005542",
-    "LOC": "#10316b",
-    "MISC": "#f6b8d1"
+    "LOC": "#f6cde6",
+    "ORG": "#ffe5bc",
+    "MISC": "#ddf9d9",
+    "PER": "#03a9f4"
 })
-dark_backgrounds = set(["ORG", "LOC"])
+color2forecolor = OrderedDict({
+    "#f6cde6": "black",
+    "#ffe5bc": "black",
+    "#ddf9d9": "black",
+    "#03a9f4": "black",
+    "#3c415e": "black"
+})
 
 
 def strip(string):
@@ -42,6 +61,7 @@ def strip(string):
 def get_html_from_pred(pred, debug=True):
     writebuf = []
     predicted_tags, predicted_probs = [list(x) for x in zip(*pred["pred"])]
+    writebuf.append('<td width="78%" style="border:1px solid black;">')
     for ix in range(len(pred["text"])):
         pred_label = strip(pred["pred_labels"][ix])
         gold_label = strip(pred["gold_labels"][ix])
@@ -56,12 +76,18 @@ def get_html_from_pred(pred, debug=True):
             attn_weight, tag = max([(pred["attn"][t][ix], t) for t in pred["attn"]])
             attn_hex = str(hex(int(abs(attn_weight) * 255)))[2:]
             # we use a neutral gray color for this case
-            attn_color = "#3c415e" + attn_hex
+            attn_base = "#3c415e"
+            attn_color = attn_base + attn_hex
+            text_color = color2forecolor[attn_base]
         else:
             attn_weight, tag = max(attn_at_point)
             attn_hex = str(hex(int(abs(attn_weight) * 255)))[2:]
-            attn_color = tag2color[tag] + attn_hex
+            attn_base = tag2color[tag]
+            attn_color = attn_base + attn_hex
+            text_color = color2forecolor[attn_base]
         html.append('<span style="padding:2px">')
+        if pred_label == "O":
+            text_color = "black"
         if correct and pred_label != "O" and debug:
             html.append('<underline style=text-decoration-color:#8dde28>')
         else:
@@ -71,7 +97,7 @@ def get_html_from_pred(pred, debug=True):
             if gold_label != "O" and debug:
                 color = tag2color[gold_label]
                 html.append(f'<underline style="text-decoration-color:{color}">')
-        html.append(f"<span style=background-color:{attn_color}>")
+        html.append(f'<span style="background-color:{attn_color};color: {text_color};border-radius:4px;padding: 1px;">')
         html.append(word)
         html.append("</span>")
         if correct and pred != "O" and debug:
@@ -90,23 +116,23 @@ def get_html_from_pred(pred, debug=True):
         html.append('</span>')
         html.append('</div>')
         writebuf.append("".join(html))
-    writebuf.append(" ")
-    writebuf.append("[")
+    writebuf.append("</td>")
+    writebuf.append('<td width="10%" style="border:1px solid black;">')
 
     for t in predicted_tags:
         if t in pred["gold"]:
             writebuf.append(f"<correct>{t} </correct>")
         else:
             writebuf.append(f"<incorrect>{t} </incorrect>")
-    writebuf.append("]")
-    writebuf.append(" ")
-    writebuf.append("[")
+    writebuf.append("</td>")
+    writebuf.append('<td width="10%" style="border:1px solid black;">')
+    # writebuf.append("[")
     for t in pred["gold"]:
         if t in predicted_tags:
             writebuf.append(f"<correct>{t} </correct>")
         else:
             writebuf.append(f"<incorrect>{t} </incorrect>")
-    writebuf.append("]")
+    writebuf.append("</td>")
     return "".join(writebuf)
 
 
@@ -168,18 +194,30 @@ def colorized_predictions_to_webpage(
         '</head>\n'
     )
     body = ["<body>"]
-    for tag in tag2color:
-        color = tag2color[tag]
-        if tag in dark_backgrounds:
-            text_background = "white"
-        else:
-            text_background = "black"
-        text = f'<span style="background-color:{color}; color: {text_background}">{tag}</span> '
-        body.append(text)
-    body.append("<br><br>")
-    for pred in predictions:
+    # for tag in tag2color:
+    #     color = tag2color[tag]
+    #     text_background = color2forecolor[color]
+    #     text = f'<span style="background-color:{color}; color: {text_background}">{tag}</span> '
+    #     body.append(text)
+    # body.append("<br><br>")
+    body.append('<table style="border:1px solid black;border-collapse:collapse;">')
+    body.append('<col align="center">')
+    body.append('<col align="left">')
+    body.append('<col align="center">')
+    body.append('<col align="center">')
+    body.append("<tr>")
+    body.append('<th style="border:1px solid black;">Idx</th>')
+    body.append('<th style="border:1px solid black;">Sentence</th>')
+    body.append('<th style="border:1px solid black;">Predictions</th>')
+    body.append('<th style="border:1px solid black;">Gold</th>')
+    body.append("</tr>")
+    for idx, pred in enumerate(predictions):
+        body.append("<tr>")
+        body.append(f'<td width="2%" style="border:1px solid black;">{idx}</td>')
         html = get_html_from_pred(pred, debug=debug)
-        body.append(f"{html}<br><br>")
+        body.append(f"{html}")
+        body.append("</tr>")
+    body.append("</table>")
     footer = ["</body></html>"]
     with open(webpage, "w") as f:
         f.write("\n".join([header] + body + footer))
