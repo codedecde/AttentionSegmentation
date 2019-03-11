@@ -11,7 +11,7 @@ os.makedirs(BASE_DIR, exist_ok=True)
 os.makedirs(CONF_DIR, exist_ok=True)
 os.makedirs(SCRIPT_DIR, exist_ok=True)
 
-NUM_SCRIPTS = 6
+NUM_SCRIPTS = 8
 METHODS = [
     "bert-base-multilingual-cased"
 ]
@@ -28,15 +28,6 @@ FINETUNE_DICT = {
     "bert-base-multilingual-cased": ["[]", "[11]", "[10, 11]", "[9, 10, 11]", "[8, 9, 10, 11]"]
 }
 OPTIMIZER_LIST = [
-    '"adam"',
-    f"""{{
-                "type": "adam",
-                "lr": 2e-5
-            }}""",
-    f"""{{
-                "type": "adam",
-                "lr": 2e-6
-            }}""",
     f"""{{
                 "type": "adam",
                 "parameter_groups": [
@@ -51,10 +42,24 @@ OPTIMIZER_LIST = [
                     [[".*encoder_word.*", ".*attn.*", ".*logit.*"], {{"lr": 1e-3}}]
                 ]
             }}""",
+    f"""{{
+                "type": "adam",
+                "parameter_groups": [
+                    [[".*bert.*"], {{"lr": 6e-7}}],
+                    [[".*encoder_word.*", ".*attn.*", ".*logit.*"], {{"lr": 1e-3}}]
+                ]
+            }}""",
+    f"""{{
+                "type": "adam",
+                "parameter_groups": [
+                    [[".*bert.*"], {{"lr": 2e-7}}],
+                    [[".*encoder_word.*", ".*attn.*", ".*logit.*"], {{"lr": 1e-3}}]
+                ]
+            }}""",
 
 ]
 OPT_ix_to_string = {
-    0: "normal", 1: "low-lr", 2: "lower-lr", 3: "finetune-low-lr", 4: "finetune-lower-lr"
+    0: "2em5", 1: "2em6", 2: "6em7", 3: "2em7"
 }
 TOTAL = (len(OPTIMIZER_LIST) * sum([len(x) - 1 for x in FINETUNE_DICT.values()]) ) + 1
 num_per_script = -(-TOTAL // NUM_SCRIPTS)
@@ -72,14 +77,15 @@ METHOD = METHODS[0]
 lowercase = "true" if "uncased" in METHOD else "false"
 for FINETUNE in FINETUNE_DICT[METHOD]:
     if FINETUNE == "[]":
-        OPTIMIZER_OPTS = [OPTIMIZER_LIST[0]]
+        OPTIMIZER_OPTS = ["adam"]
     else:
         OPTIMIZER_OPTS = OPTIMIZER_LIST
     for ix, OPT in enumerate(OPTIMIZER_OPTS):
         DIM = INP_DIMS[METHOD]
+        script_no = config_count % NUM_SCRIPTS
         raw = f"""
         {{
-          "base_output_dir": "{SCRATCH}/Experiments/CoNLL/BERT-Finetune/{METHOD}",
+          "base_output_dir": "{SCRATCH}/Experiments/CoNLL/BERT-Finetune-2/Dir-{script_no}",
           "dataset_reader": {{
             "type": "WeakConll2003DatasetReader",
             "tag_label": "ner",
@@ -93,7 +99,7 @@ for FINETUNE in FINETUNE_DICT[METHOD]:
                       "type": "bert-pretrained",
                       "pretrained_model": "./Data/embeddings/BERTEmbeddings/{METHOD}/vocab.txt",
                       "do_lowercase": {lowercase},
-                      "use_starting_offsets": "true"
+                      "use_starting_offsets": true
                 }}
              }},
           }},
@@ -110,7 +116,7 @@ for FINETUNE in FINETUNE_DICT[METHOD]:
                   "bert": {{
                       "type": "bert-pretrained",
                       "pretrained_model": "./Data/embeddings/BERTEmbeddings/{METHOD}/{METHOD}.tar.gz",
-                      "top_layer_only": "false",
+                      "top_layer_only": true,
                       "requires_grad": {FINETUNE}
                   }}
               }},
@@ -163,12 +169,16 @@ for FINETUNE in FINETUNE_DICT[METHOD]:
           }}
         }}
         """
-        ft_layers = 0 if FINETUNE == "[]" else len(FINETUNE.split(","))
+        if FINETUNE == "[]":
+            ft_layers = 0
+        elif FINETUNE == "all":
+            ft_layers = "all"
+        else:
+            ft_layers = len(FINETUNE.split(","))
         optstr = OPT_ix_to_string[ix]
-        config_file = os.path.join(CONF_DIR, f"config_{METHOD}_FTL_{ft_layers}_OPT_{optstr}.json")
+        config_file = os.path.join(CONF_DIR, f"config_{METHOD}_TLO_true_FTL_{ft_layers}_OPT_{optstr}.json")
         with open(config_file, "w") as f:
             f.write(raw)
-        script_no = config_count // num_per_script
         run_cmd = f"${{PYTHON}} -m AttentionSegmentation.main --config_file {config_file}"
         scripts[script_no].append(run_cmd)
         config_count += 1

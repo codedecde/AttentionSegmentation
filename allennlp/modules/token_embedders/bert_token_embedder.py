@@ -8,7 +8,7 @@ At its core it uses Hugging Face's PyTorch implementation
 so thanks to them!
 """
 import logging
-from typing import List
+from typing import List, Union
 import torch
 import re
 
@@ -132,23 +132,37 @@ class PretrainedBertEmbedder(BertEmbedder):
     top_layer_only: ``bool``, optional (default = ``False``)
         If ``True``, then only return the top layer instead of apply the scalar mix.
     """
-    def __init__(self, pretrained_model: str, requires_grad: List[int] = [], top_layer_only: bool = False) -> None:
+    def __init__(
+        self, pretrained_model: str,
+        requires_grad: Union[List[int], str] = [],
+        top_layer_only: bool = False
+    ) -> None:
         model = BertModel.from_pretrained(pretrained_model)
-        if len(requires_grad) == 0:
-            # no finetuning required
-            for param in model.parameters():
-                param.requires_grad = False
-        else:
-            # Finetune the pooling layer and the
-            # layers mentioned in the list
-            grad_str = "|".join([str(x) for x in requires_grad])
-            match_str = r"encoder\.layer\.({0}).*".format(grad_str)
-            for name, param in model.named_parameters():
-                if re.match(match_str, name) is not None or "pooler" in name:
-                    param.requires_grad = True
-                    logger.info(f"Layer {name} is finetuned")
-                else:
+        if isinstance(requires_grad, str):
+            if requires_grad == "None":
+                for param in model.parameters():
                     param.requires_grad = False
+            elif requires_grad == "all":
+                for param in model.parameters():
+                    param.requires_grad = True
+            else:
+                raise NotImplementedError("Work in progress")
+        elif isinstance(requires_grad, list):
+            if len(requires_grad) == 0:
+                # no finetuning required
+                for param in model.parameters():
+                    param.requires_grad = False
+            else:
+                # Finetune the pooling layer and the
+                # layers mentioned in the list
+                grad_str = "|".join([str(x) for x in requires_grad])
+                match_str = r"encoder\.layer\.({0}).*".format(grad_str)
+                for name, param in model.named_parameters():
+                    if re.match(match_str, name) is not None or "pooler" in name:
+                        param.requires_grad = True
+                        logger.info(f"Layer {name} is finetuned")
+                    else:
+                        param.requires_grad = False
 
         super().__init__(bert_model=model, top_layer_only=top_layer_only)
 
