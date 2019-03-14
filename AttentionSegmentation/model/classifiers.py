@@ -19,8 +19,7 @@ from allennlp.modules import \
     Seq2SeqEncoder, TextFieldEmbedder
 from allennlp.data import Vocabulary
 from allennlp.common.checks import check_dimensions_match
-from allennlp.models.model import Model
-from allennlp.common.params import Params
+from allennlp.common.params import Params, Registrable
 from allennlp.training.metrics import \
     BooleanAccuracy
 
@@ -28,11 +27,13 @@ from AttentionSegmentation.reader.label_indexer import LabelIndexer
 from AttentionSegmentation.commons.utils import to_numpy
 import AttentionSegmentation.model as Attns
 from AttentionSegmentation.model.metrics import ClassificationMetrics
+from AttentionSegmentation.model.base_classifier import BaseClassifier
 
 logger = logging.getLogger(__name__)
 
 
-class Classifier(Model):
+@BaseClassifier.register("classifier")
+class Classifier(BaseClassifier):
     """
         This model computes the predictions, losses, attentions
     """
@@ -241,7 +242,8 @@ class Classifier(Model):
         )
 
 
-class MultiClassifier(Model):
+@BaseClassifier.register("multi_classifier")
+class MultiClassifier(BaseClassifier):
     """This class is similar to the previous one, except that
     it handles multi level classification
     """

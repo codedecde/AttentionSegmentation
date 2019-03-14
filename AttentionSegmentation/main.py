@@ -15,7 +15,7 @@ import AttentionSegmentation.reader as Readers
 
 # import model as Models
 from AttentionSegmentation.trainer import Trainer
-import AttentionSegmentation.model.classifiers as Models
+from AttentionSegmentation.model.base_classifier import BaseClassifier
 
 from AttentionSegmentation.commons.utils import \
     setup_output_dir, read_from_config_file
@@ -130,10 +130,7 @@ def main():
     # Create the model
     logger.info("Constructing The model")
     model_params = config.pop("model")
-    model_type = model_params.pop("type")
-    assert model_type is not None and hasattr(Models, model_type),\
-        f"Cannot find reader {model_type}"
-    model = getattr(Models, model_type).from_params(
+    model = BaseClassifier.from_params(
         vocab=vocab,
         params=model_params,
         label_indexer=reader.get_label_indexer()

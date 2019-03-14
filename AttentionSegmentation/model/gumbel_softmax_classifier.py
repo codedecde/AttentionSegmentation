@@ -19,6 +19,7 @@ from allennlp.modules import \
     Seq2SeqEncoder, TextFieldEmbedder
 from allennlp.data import Vocabulary
 from allennlp.common.checks import check_dimensions_match
+from allennlp.modules import FeedForward
 from allennlp.models.model import Model
 from allennlp.common.params import Params, Registrable
 from allennlp.training.metrics import \
@@ -26,31 +27,184 @@ from allennlp.training.metrics import \
 
 from AttentionSegmentation.reader.label_indexer import LabelIndexer
 from AttentionSegmentation.commons.utils import to_numpy
-import AttentionSegmentation.model as Attns
 from AttentionSegmentation.model.metrics import ClassificationMetrics
+from AttentionSegmentation.model.base_classifier import BaseClassifier
 
 logger = logging.getLogger(__name__)
 
+
 class Generator(torch.nn.Module, Registrable):
+    def __init__(self, *args, **kwargs):
+        super(Generator, self).__init__()
+
     @classmethod
     def from_params(cls, params: Params):
         gen_type = params.pop("type")
         return cls.by_name(gen_type).from_params(params)
 
+
 @Generator.register("basic_generator")
 class BasicGenerator(Generator):
+    def __init__(
+        self,
+        encoder_word: Seq2SeqEncoder,
+        prob_layer: FeedForward
+    ):
+        self.encoder_word = encoder_word
+        self.prob_layer = prob_layer
+        super(BasicGenerator, self).__init__()
+
     @overrides
     def forward(
         self,
         emb_msg: torch.Tensor,
         mask: torch.LongTensor
-    ): -> torch.Tensor:
+    ) -> torch.Tensor:
         logits = self.encoder_word(emb_msg, mask)
         attentions = self.prob_layer(logits)
         return attentions
 
+    @classmethod
+    def from_params(cls, params: Params):
+        encoder_word = Seq2SeqEncoder.from_params(params.pop("encoder_word"))
+        prob_layer = FeedForward.from_params(params.pop("prob_layer"))
+        assert params.assert_empty(cls.__name__)
+        return cls(
+            encoder_word=encoder_word,
+            prob_layer=prob_layer
+        )
 
-class BaseClassifier(Model):
+
+class Sampler(torch.nn.Module, Registrable):
+    def __init__(self, *args, **kwargs):
+        super(Sampler, self).__init__()
+
+    @classmethod
+    def from_params(cls, params: Params):
+        sampler_type = params.pop("type")
+        return cls.by_name(sampler_type).from_params(params)
+
+
+@Sampler.register("identity")
+class Identity(Sampler):
+    def __init__(self, *args, **kwargs):
+        super(Identity, self).__init__()
+
+    @overrides
+    def forward(
+        self,
+        attentions: torch.Tensor,
+        mask: torch.LongTensor
+    )->'Identity':
+        """Generates the probability. Identity function.
+        Except applies the mask
+
+        Parameters:
+            attentions (torch.Tensor): batch x seq_len x (num_tags + 1)
+            mask (torch.LongTensor): batch x seq_len
+        Returns:
+            samples (torch.Tensor): batch x seq_len x (num_tags + 1)
+        """
+        mask = mask.float()
+        samples = mask.unsqueeze(-1).expand_as(attentions) * attentions
+        return samples
+
+    @classmethod
+    def from_params(cls, params: Params):
+        params.assert_empty(cls.__name__)
+        return cls()
+
+
+class Identifier(torch.nn.Module, Registrable):
+    def __init__(self, *args, **kwargs):
+        super(Identifier, self).__init__()
+
+    @classmethod
+    def from_params(cls, params: Params, label_indexer: LabelIndexer):
+        identifier_type = params.pop("type")
+        return cls.by_name(identifier_type).from_params(params, label_indexer)
+
+
+@Identifier.register("basic_identifier")
+class BasicIdentifier(Identifier):
+    def __init__(
+        self,
+        label_indexer: LabelIndexer,
+        thresh: float,
+        output_dim: int
+    ):
+        self.label_indexer = label_indexer
+        self.thresh = thresh
+        self.output_dim
+        self.log_thresh = np.log(self.thresh + 1e-5)
+        num_tags = self.label_indexer.get_num_tags()
+        for tag_ix in range(num_tags):
+            tag = self.label_indexer.get_tag(tag_ix)
+            module = Linear(self.output_dim, 1)
+            setattr(self, f"logits_layer{tag}", module)
+
+        super(BasicIdentifier, self).__init__()
+
+    def forward(
+        self,
+        emb_msg: torch.Tensor,
+        mask: torch.LongTensor,
+        samples: torch.Tensor,
+        labels: torch.LongTensor
+    )->torch.Tensor:
+        """
+        Parameters:
+            emb_msg: batch x seq_len x embed_dim
+            mask: batch x seq_len
+            samples: batch x seq_len x (num_tags + 1)
+            labels: batch
+        """
+        outputs = {}
+        outputs["mask"] = mask
+        batch, seq_len, embed_dim = emb_msg.size()
+        batch, seq_len, num_tags_with_other = samples.size()
+        num_tags = num_tags_with_other - 1
+        # Now generate the sentence embeddings
+        all_logits = []
+        for tag_ix in range(num_tags):
+            tag = self.label_indexer.get_tag(tag_ix)
+            sentence_embed = \
+                emb_msg * mask.float().unsqueeze(-1).expand_as(emb_msg) * \
+                samples[:, :, tag_ix].unsqueeze(-1).expand_as(emb_msg)
+            sentence_embed = sentence_embed.sum(dim=1)
+            assert sentence_embed.size() == (batch, embed_dim)
+            logits = getattr(self, f"logits_layer_{tag}")(sentence_embed)
+            all_logits.append(logits)
+        all_logits = torch.cat(all_logits, -1)
+        log_probs = F.logsigmoid(all_logits)
+        outputs["logits"] = all_logits
+        outputs["log_probs"] = log_probs
+        pred_labels = log_probs.gt(self.log_thresh).long()
+        outputs["preds"] = pred_labels
+        if labels is not None:
+            labels = labels[:, :-1]
+            soft_labels = labels + self.smoothing - \
+                (2 * self.smoothing * labels)
+            loss = -(soft_labels * log_probs +
+                     ((1 - soft_labels) * F.logsigmoid(-all_logits)))
+            loss = loss.mean(-1).mean()
+            outputs["loss"] = loss
+        return outputs
+
+    @classmethod
+    def from_params(cls, params: Params, label_indexer: LabelIndexer):
+        thresh = params.pop_float("thresh", 0.5)
+        output_dim = params.pop_int("output_dim")
+        params.assert_empty(cls.__name__)
+        return cls(
+            label_indexer=label_indexer,
+            thresh=thresh,
+            output_dim=output_dim
+        )
+
+
+@BaseClassifier.register("recurrent_attention_classifier")
+class RecurrentAttentionClassifier(BaseClassifier):
     """This class is similar to the previous one, except that
     it handles multi level classification
     """
@@ -63,18 +217,17 @@ class BaseClassifier(Model):
         sampler: Sampler,
         identifier: Identifier,
         label_indexer: LabelIndexer,
-        thresh: float = 0.5,
         initializer: InitializerApplicator = InitializerApplicator(),
         regularizer: Optional[RegularizerApplicator] = None
-    ) -> 'MultiClassifier':
-        super(BaseClassifier, self).__init__(vocab, regularizer)
+    ) -> 'RecurrentAttentionClassifier':
+        super(RecurrentAttentionClassifier, self).__init__(vocab, regularizer)
         # Label info
         self.label_indexer = label_indexer
         self.num_labels = self.label_indexer.get_num_tags()
 
         # Prediction thresholds
-        self.thresh = thresh
-        self.log_thresh = np.log(thresh + 1e-5)
+        # self.thresh = thresh
+        # self.log_thresh = np.log(thresh + 1e-5)
         # Model
         # Text encoders
         self.text_field_embedder = text_field_embedder
@@ -146,12 +299,12 @@ class BaseClassifier(Model):
         emb_msg = self.text_field_embedder(tokens)
         mask = util.get_text_field_mask(tokens)
         attentions = self.generator(emb_msg, mask)
-        samples = None
-        if self.sampler is not None:
-            samples = self.sampler(attentions, mask)
-        else:
-            samples = attentions
-        outputs = self.identifier(emb_msg, mask, samples, attentions, labels)
+        samples = self.sampler(attentions, mask)
+        outputs = self.identifier(emb_msg, mask, samples, labels)
+        outputs["attentions"] = attentions[:, :, :-1]
+        pred_labels = outputs["pred"]
+        self.classification_metric(pred_labels.long(), labels.long())
+        self.decode(outputs)
         return outputs
 
     @overrides
@@ -223,9 +376,7 @@ class BaseClassifier(Model):
         vocab: Vocabulary,
         params: Params,
         label_indexer: LabelIndexer
-    ) -> 'BaseClassifier':
-        
-        num_tags = label_indexer.get_num_tags()
+    ) -> 'RecurrentAttentionClassifier':
         embedder_params = params.pop("text_field_embedder")
         text_field_embedder = TextFieldEmbedder.from_params(
             vocab, embedder_params
@@ -242,10 +393,10 @@ class BaseClassifier(Model):
 
         identifier_params = params.pop("identifier_params")
         identifier = Identifier.from_params(
-            identifier_params
+            identifier_params,
+            label_indexer
         )
 
-        threshold = params.pop("threshold", 0.5)
         initializer = InitializerApplicator.from_params(
             params.pop('initializer', [])
         )
@@ -258,7 +409,6 @@ class BaseClassifier(Model):
             generator=generator,
             sampler=sampler,
             identifier=identifier,
-            thresh=threshold,
             initializer=initializer,
             regularizer=regularizer,
             label_indexer=label_indexer

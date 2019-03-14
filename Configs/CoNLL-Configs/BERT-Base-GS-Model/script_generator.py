@@ -65,23 +65,23 @@ for METHOD in METHODS:
       "test_data_path": "./Data/CoNLLData/test.txt",
       "evaluate_on_test": true,
       "model": {{
-          "type": "GumbelSoftmaxModel",
-          "generator": {{
-              "type": "BasicGenerator",
-              "text_field_embedder": {{
-                  "type": "basic",
-                  "token_embedders": {{
-                      "bert": {{
-                          "type": "bert-pretrained",
-                          "pretrained_model": "./Data/embeddings/BERTEmbeddings/{METHOD}/{METHOD}.tar.gz",
-                          "top_layer_only": "false"
-                      }}
-                  }},
-                  "embedder_to_indexer_map": {{
-                      "bert": ["bert", "bert-offsets"]
-                  }},
-                  "allow_unmatched_keys": true
+          "type": "recurrent_attention_classifier",
+          "text_field_embedder": {{
+              "type": "basic",
+              "token_embedders": {{
+                  "bert": {{
+                      "type": "bert-pretrained",
+                      "pretrained_model": "./Data/embeddings/BERTEmbeddings/{METHOD}/{METHOD}.tar.gz",
+                      "top_layer_only": "false"
+                  }}
               }},
+              "embedder_to_indexer_map": {{
+                  "bert": ["bert", "bert-offsets"]
+              }},
+              "allow_unmatched_keys": true
+          }},
+          "generator_params": {{
+              "type": "basic_generator",
               "encoder_word": {{
                   "type": "gru",
                   "input_size": {DIM},
@@ -90,16 +90,20 @@ for METHOD in METHODS:
                   "dropout": 0.5,
                   "bidirectional": true
               }},
-              "tagger": {{
+              "prob_layer": {{
                   "input_dim": 300,
                   "num_layers": 1,
                   "hidden_dims": [5],
-                  "activations": ["LogSoftmax"]
-              }},
-              "sampler": None
-          }}
-          "discriminator": {{
-              "type": "BasicDiscriminator"
+                  "activations": ["softmax"]
+              }}
+          }},
+          "sampler_params": {{
+              "type": "identity"
+          }},
+          "identifier_params": {{
+              "type": "basic_identifier",
+              "thresh": 0.5,
+              "output_dim": {DIM}
           }}
       }},
       "iterator": {{
@@ -109,7 +113,7 @@ for METHOD in METHODS:
         "batch_size": 32
       }},
       "segmentation": {{
-        "type": "BasicMultiPredictions",
+        "type": "SymbolStopwordFilteredMultiPredictions",
         "tol": 0.01,
         "visualize": true
       }},
