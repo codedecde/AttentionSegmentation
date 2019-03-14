@@ -94,7 +94,7 @@ for METHOD in METHODS:
                   "input_dim": 300,
                   "num_layers": 1,
                   "hidden_dims": [5],
-                  "activations": ["softmax"]
+                  "activations": ["linear"]
               }}
           }},
           "sampler_params": {{
@@ -103,7 +103,8 @@ for METHOD in METHODS:
           "identifier_params": {{
               "type": "basic_identifier",
               "thresh": 0.5,
-              "output_dim": {DIM}
+              "output_dim": {DIM},
+              "smoothing": 0.1
           }}
       }},
       "iterator": {{

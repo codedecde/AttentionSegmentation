@@ -1,12 +1,15 @@
 from allennlp.models.model import Model
-from allennlp.common.params import Params, Registrable
+from allennlp.common import Params, Registrable
 from allennlp.data import Vocabulary
 from AttentionSegmentation.reader.label_indexer import LabelIndexer
 
 
 class BaseClassifier(Model, Registrable):
-    def __init__(self, *args, **kwargs):
-        super(BaseClassifier, self).__init__()
+    def __init__(self, vocab, regularizer, *args, **kwargs):
+        super(BaseClassifier, self).__init__(
+            vocab=vocab,
+            regularizer=regularizer
+        )
 
     @classmethod
     def from_params(

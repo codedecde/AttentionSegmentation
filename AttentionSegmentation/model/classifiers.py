@@ -19,13 +19,13 @@ from allennlp.modules import \
     Seq2SeqEncoder, TextFieldEmbedder
 from allennlp.data import Vocabulary
 from allennlp.common.checks import check_dimensions_match
-from allennlp.common.params import Params, Registrable
+from allennlp.common import Params, Registrable
 from allennlp.training.metrics import \
     BooleanAccuracy
 
 from AttentionSegmentation.reader.label_indexer import LabelIndexer
 from AttentionSegmentation.commons.utils import to_numpy
-import AttentionSegmentation.model as Attns
+from AttentionSegmentation.model.attention_module import *
 from AttentionSegmentation.model.metrics import ClassificationMetrics
 from AttentionSegmentation.model.base_classifier import BaseClassifier
 
@@ -43,7 +43,7 @@ class Classifier(BaseClassifier):
         vocab: Vocabulary,
         text_field_embedder: TextFieldEmbedder,
         encoder_word: Seq2SeqEncoder,
-        attn_word: Attns.BaseAttention,
+        attn_word: BaseAttention,
         label_indexer: LabelIndexer,
         thresh: float = 0.5,
         initializer: InitializerApplicator = InitializerApplicator(),
@@ -222,7 +222,7 @@ class Classifier(BaseClassifier):
         encoder_word = Seq2SeqEncoder.from_params(params.pop("encoder_word"))
         attn_word_params = params.pop("attention_word")
         attn_type = attn_word_params.pop("type")
-        attn_word = getattr(Attns, attn_type).from_params(attn_word_params)
+        attn_word = eval(attn_type).from_params(attn_word_params)
         threshold = params.pop("threshold", 0.5)
         initializer = InitializerApplicator.from_params(
             params.pop('initializer', [])
@@ -254,7 +254,7 @@ class MultiClassifier(BaseClassifier):
         method: str,
         text_field_embedder: TextFieldEmbedder,
         encoder_word: Seq2SeqEncoder,
-        attn_word: List[Attns.BaseAttention],
+        attn_word: List[BaseAttention],
         label_indexer: LabelIndexer,
         thresh: float = 0.5,
         initializer: InitializerApplicator = InitializerApplicator(),

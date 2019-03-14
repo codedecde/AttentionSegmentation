@@ -21,7 +21,7 @@ from allennlp.data import Vocabulary
 from allennlp.common.checks import check_dimensions_match
 from allennlp.modules import FeedForward
 from allennlp.models.model import Model
-from allennlp.common.params import Params, Registrable
+from allennlp.common import Params, Registrable
 from allennlp.training.metrics import \
     BooleanAccuracy
 
@@ -50,9 +50,9 @@ class BasicGenerator(Generator):
         encoder_word: Seq2SeqEncoder,
         prob_layer: FeedForward
     ):
+        super(BasicGenerator, self).__init__()
         self.encoder_word = encoder_word
         self.prob_layer = prob_layer
-        super(BasicGenerator, self).__init__()
 
     @overrides
     def forward(
@@ -61,14 +61,14 @@ class BasicGenerator(Generator):
         mask: torch.LongTensor
     ) -> torch.Tensor:
         logits = self.encoder_word(emb_msg, mask)
-        attentions = self.prob_layer(logits)
+        attentions = F.softmax(self.prob_layer(logits), dim=-1)
         return attentions
 
     @classmethod
     def from_params(cls, params: Params):
         encoder_word = Seq2SeqEncoder.from_params(params.pop("encoder_word"))
         prob_layer = FeedForward.from_params(params.pop("prob_layer"))
-        assert params.assert_empty(cls.__name__)
+        params.assert_empty(cls.__name__)
         return cls(
             encoder_word=encoder_word,
             prob_layer=prob_layer
@@ -131,19 +131,20 @@ class BasicIdentifier(Identifier):
         self,
         label_indexer: LabelIndexer,
         thresh: float,
-        output_dim: int
+        output_dim: int,
+        smoothing: float = 0.1
     ):
+        super(BasicIdentifier, self).__init__()
         self.label_indexer = label_indexer
         self.thresh = thresh
-        self.output_dim
+        self.output_dim = output_dim
         self.log_thresh = np.log(self.thresh + 1e-5)
+        self.smoothing = smoothing
         num_tags = self.label_indexer.get_num_tags()
         for tag_ix in range(num_tags):
             tag = self.label_indexer.get_tag(tag_ix)
             module = Linear(self.output_dim, 1)
-            setattr(self, f"logits_layer{tag}", module)
-
-        super(BasicIdentifier, self).__init__()
+            setattr(self, f"logits_layer_{tag}", module)
 
     def forward(
         self,
@@ -195,11 +196,13 @@ class BasicIdentifier(Identifier):
     def from_params(cls, params: Params, label_indexer: LabelIndexer):
         thresh = params.pop_float("thresh", 0.5)
         output_dim = params.pop_int("output_dim")
+        smoothing = params.pop_float("smoothing", 0.1)
         params.assert_empty(cls.__name__)
         return cls(
             label_indexer=label_indexer,
             thresh=thresh,
-            output_dim=output_dim
+            output_dim=output_dim,
+            smoothing=smoothing
         )
 
 
@@ -232,7 +235,7 @@ class RecurrentAttentionClassifier(BaseClassifier):
         # Text encoders
         self.text_field_embedder = text_field_embedder
         self.generator = generator
-
+        self.sampler = sampler
         # Attention Modules
         # We use setattr, so that cuda properties translate.
         self.identifier = identifier
@@ -302,7 +305,7 @@ class RecurrentAttentionClassifier(BaseClassifier):
         samples = self.sampler(attentions, mask)
         outputs = self.identifier(emb_msg, mask, samples, labels)
         outputs["attentions"] = attentions[:, :, :-1]
-        pred_labels = outputs["pred"]
+        pred_labels = outputs["preds"]
         self.classification_metric(pred_labels.long(), labels.long())
         self.decode(outputs)
         return outputs
