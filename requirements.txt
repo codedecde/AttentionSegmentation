@@ -1,4 +1,4 @@
-Flask==0.12.1
+Flask==1.0.0
 packaging==17.1
 pytest==4.4.1
 pytz==2018.4
