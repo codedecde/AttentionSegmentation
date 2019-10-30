@@ -1,7 +1,6 @@
 from typing import Dict, List, Sequence, Iterable
 import itertools
 import logging
-import logging
 import re
 
 from overrides import overrides
@@ -15,13 +14,15 @@ from allennlp.data.dataset_readers \
 from allennlp.data.instance import Instance
 from allennlp.data.token_indexers import TokenIndexer
 from allennlp.data.tokenizers import Token
+from allennlp.data.token_indexers import SingleIdTokenIndexer
+from allennlp.data.dataset_readers.dataset_utils.span_utils import iob1_to_bioul
 from allennlp.data.fields \
-    import MultiLabelField, TextField, SequenceLabelField
+    import MultiLabelField, TextField, SequenceLabelField, Field
 from AttentionSegmentation.reader.label_indexer import LabelIndexer
 
 
 logger = logging.getLogger(__name__)
-# NUM_TOKEN = "@@NUM@@"
+
 NUM_TOKEN = "@0@"
 
 

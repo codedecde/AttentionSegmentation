@@ -12,14 +12,36 @@ from allennlp.data.instance import Instance
 from allennlp.models.model import Model
 from allennlp.common.tqdm import Tqdm
 from nltk.corpus import stopwords
+from nltk import word_tokenize
 
 from AttentionSegmentation.visualization.visualize_attns import \
     colorized_predictions_to_webpage_binary, colorized_predictions_to_webpage
 from AttentionSegmentation.evaluation.conlleval_perl import \
     fscore_from_preds
+from AttentionSegmentation.reader.weak_conll_reader import NUM_TOKEN
 
 
 logger = logging.getLogger(__name__)
+
+
+def get_nltk_stopwords() -> List[str]:
+    """Gets the NLTK stopwords + the tokenized version of the stopword
+
+    ..note::
+        NLTK stopwords have words like it's. However if you tokenize it,
+        with say nltk tokenizer, it splits the words into it and 's. This
+        is also observed in the CoNLL corpus. In order for the 's to be identified
+        as a stopword, we tokenize the word and add all the tokenized components.
+
+    """
+    _stopword_list: List[str] = stopwords.words("english")
+    stopword_list: List[str] = []
+    for word in _stopword_list:
+        stopword_list.append(word)
+        for w in word_tokenize(word):
+            stopword_list.append(w)
+    stopword_list = list(set(stopword_list))
+    return stopword_list
 
 
 def get_binary_preds_from_attns(attns, tag, tol=0.01):
@@ -275,7 +297,7 @@ class BasicMultiPredictions(BasePredictionClass):
                 prob, tag = max([(attns[tag][ix], tag) for tag in attns
                                  if tag in preds])
                 if prob < self._tol or \
-                        text[ix].lower() in self._get_filtered_set():
+                        text[ix].lower() in self._get_filtered_set() or NUM_TOKEN in text[ix].lower():
                     pred_labels.append("O")
                 else:
                     if len(pred_labels) > 0 and re.match(
@@ -325,9 +347,9 @@ class SymbolStopwordFilteredBinaryPredictions(BasicBinaryPredictions):
                  tol=0.01):
         super(SymbolStopwordFilteredBinaryPredictions, self).__init__(
             vocab, reader, visualize, tol)
-        stopword_list = stopwords.words("english")
+        stopword_list = get_nltk_stopwords()
         stop_set = set(stopword_list)
-        punct_set = set([".", ",", "!", "-", "?", "'", ")", "("])
+        punct_set = set([".", ",", "!", "-", "?", "'", ")", "(", "'s"])
         self._filter_set = stop_set | punct_set
 
     @overrides
@@ -365,7 +387,7 @@ class SymbolStopwordFilteredMultiPredictions(BasicMultiPredictions):
             tol=tol,
             use_probs=use_probs
         )
-        stopword_list = stopwords.words("english")
+        stopword_list = get_nltk_stopwords()
         stop_set = set(stopword_list)
         punct_set = set([".", ",", "!", "-", "?", "'", ")", "("])
         self._filter_set = stop_set | punct_set
