@@ -1,5 +1,5 @@
 {
-    "base_output_dir": "/home/t-bapatr/Attention-Segmentation/AttentionSegmentation/trained_models/Experiments/CoNLL/BERT-realFT-PS-GridSearch",
+    "base_output_dir": "./trained_models/CoNLL-BERT-realFT-PS",
     "dataset_reader": {
         "convert_numbers": true,
         "label_indexer": {
