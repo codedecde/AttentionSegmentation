@@ -3,7 +3,7 @@
 import os
 import re
 
-BASE_DIR = os.path.join("Configs/CoNLL-Configs/BERT-Finetune")
+BASE_DIR = os.path.join("Configs/CoNLL-Configs/BERT-mlingual-case-stop")
 CONF_DIR = os.path.join(BASE_DIR, "Configs")
 SCRIPT_DIR = os.path.join(BASE_DIR, "Scripts")
 
@@ -13,7 +13,7 @@ os.makedirs(SCRIPT_DIR, exist_ok=True)
 
 NUM_SCRIPTS = 1
 METHODS = [
-    "bert-base-multilingual-cased"
+    "bert-base-multilingual-cased",
 ]
 # drop_list = [0.2, 0.4, 0.5, 0.6, 0.8]
 
@@ -24,53 +24,26 @@ INP_DIMS = {
     "bert-large-cased": 1024
 }
 
-FINETUNE_DICT = {
-    "bert-base-multilingual-cased": ["[9, 10, 11]", "[8, 9, 10, 11]"]
-}
-OPTIMIZER_LIST = [
-    f"""{{
-                "type": "adam",
-                "parameter_groups": [
-                    [[".*bert.*"], {{"lr": 2e-5}}],
-                    [[".*encoder_word.*", ".*attn.*", ".*logit.*"], {{"lr": 1e-3}}]
-                ]
-            }}""",
-    f"""{{
-                "type": "adam",
-                "parameter_groups": [
-                    [[".*bert.*"], {{"lr": 2e-7}}],
-                    [[".*encoder_word.*", ".*attn.*", ".*logit.*"], {{"lr": 1e-3}}]
-                ]
-            }}""",
+TOP_LAYER_ONLY_VALUES = ["true", "false"]
 
-]
-OPT_ix_to_string = {
-    0: "2em5", 1: "2em7"
-}
-TOTAL = (len(OPTIMIZER_LIST) * sum([len(x) - 1 for x in FINETUNE_DICT.values()])) + 1
+TOTAL = len(METHODS) * len(TOP_LAYER_ONLY_VALUES)
 num_per_script = -(-TOTAL // NUM_SCRIPTS)
 SCRIPT_HEADER = f"""
-PYTHON=python
 
 """
-SCRATCH = "/home/ubuntu/mount_dir/AttentionSegmentation"
+SCRATCH = "~/mountdir/AttentionSegmentation/output/"
 scripts = [[SCRIPT_HEADER] for _ in range(NUM_SCRIPTS)]
 config_count = 0
+DROPOUT = 0.
 TEMP = 1.
 
-METHOD = METHODS[0]
-lowercase = "true" if "uncased" in METHOD else "false"
-for FINETUNE in FINETUNE_DICT[METHOD]:
-    if FINETUNE == "[]":
-        OPTIMIZER_OPTS = ["adam"]
-    else:
-        OPTIMIZER_OPTS = OPTIMIZER_LIST
-    for ix, OPT in enumerate(OPTIMIZER_OPTS):
+for METHOD in METHODS:
+    lowercase = "true" if "uncased" in METHOD else "false"
+    for TLO in TOP_LAYER_ONLY_VALUES:
         DIM = INP_DIMS[METHOD]
-        script_no = config_count % NUM_SCRIPTS
         raw = f"""
         {{
-          "base_output_dir": "{SCRATCH}/Experiments/CoNLL/BERT-Finetune-2/Dir-{script_no}",
+          "base_output_dir": "{SCRATCH}/Experiments/CoNLL/BERT-mlingual-case-stop/{METHOD}",
           "dataset_reader": {{
             "type": "WeakConll2003DatasetReader",
             "tag_label": "ner",
@@ -84,7 +57,7 @@ for FINETUNE in FINETUNE_DICT[METHOD]:
                       "type": "bert-pretrained",
                       "pretrained_model": "./Data/embeddings/BERTEmbeddings/{METHOD}/vocab.txt",
                       "do_lowercase": {lowercase},
-                      "use_starting_offsets": true
+                      "use_starting_offsets": "true"
                 }}
              }},
           }},
@@ -101,8 +74,7 @@ for FINETUNE in FINETUNE_DICT[METHOD]:
                   "bert": {{
                       "type": "bert-pretrained",
                       "pretrained_model": "./Data/embeddings/BERTEmbeddings/{METHOD}/{METHOD}.tar.gz",
-                      "top_layer_only": true,
-                      "requires_grad": {FINETUNE}
+                      "top_layer_only": {TLO}
                   }}
               }},
               "embedder_to_indexer_map": {{
@@ -123,6 +95,7 @@ for FINETUNE in FINETUNE_DICT[METHOD]:
               "key_emb_size": 300,
               "ctxt_emb_size": 300,
               "attn_type": "sum",
+              "dropout": {DROPOUT},
               "temperature": {TEMP},
             }},
             "threshold": 0.5
@@ -136,10 +109,11 @@ for FINETUNE in FINETUNE_DICT[METHOD]:
           "segmentation": {{
             "type": "SymbolStopwordFilteredMultiPredictions",
             "tol": 0.01,
+            "use_probs": true,
             "visualize": true
           }},
           "trainer": {{
-            "optimizer": {OPT},
+            "optimizer": "adam",
             "num_epochs": 50,
             "patience": 10,
             "cuda_device": 0,
@@ -153,17 +127,13 @@ for FINETUNE in FINETUNE_DICT[METHOD]:
           }}
         }}
         """
-        if FINETUNE == "[]":
-            ft_layers = 0
-        elif FINETUNE == "all":
-            ft_layers = "all"
-        else:
-            ft_layers = len(FINETUNE.split(","))
-        optstr = OPT_ix_to_string[ix]
-        config_file = os.path.join(CONF_DIR, f"config_{METHOD}_TLO_true_FTL_{ft_layers}_OPT_{optstr}.json")
+        # Write the config
+        temp_txt = re.sub("\.", "_", str(TEMP))
+        config_file = os.path.join(CONF_DIR, f"config_{METHOD}_TLO_{TLO}.json")
         with open(config_file, "w") as f:
             f.write(raw)
-        run_cmd = f"${{PYTHON}} -m AttentionSegmentation.main --config_file {config_file}"
+        script_no = config_count // num_per_script
+        run_cmd = f"python -m AttentionSegmentation.main --config_file {config_file}"
         scripts[script_no].append(run_cmd)
         config_count += 1
 # Now write the scripts

@@ -11,7 +11,7 @@ os.makedirs(BASE_DIR, exist_ok=True)
 os.makedirs(CONF_DIR, exist_ok=True)
 os.makedirs(SCRIPT_DIR, exist_ok=True)
 
-NUM_SCRIPTS = 8
+NUM_SCRIPTS = 1
 METHODS = [
     "bert-base-multilingual-cased"
 ]
@@ -61,10 +61,10 @@ OPT_ix_to_string = {
 TOTAL = (len(OPTIMIZER_LIST) * sum([len(x) - 1 for x in FINETUNE_DICT.values()]) ) + 1
 num_per_script = -(-TOTAL // NUM_SCRIPTS)
 SCRIPT_HEADER = f"""
-PYTHON=/zfsauton3/home/bpatra/miniconda3/bin/python3.6
+
 
 """
-SCRATCH = "/home/scratch/bpatra"
+SCRATCH = "/home/ubuntu/mount_dir/AttentionSegmentation"
 scripts = [[SCRIPT_HEADER] for _ in range(NUM_SCRIPTS)]
 config_count = 0
 TEMP = 1.
@@ -171,7 +171,7 @@ for FINETUNE in FINETUNE_DICT[METHOD]:
         config_file = os.path.join(CONF_DIR, f"config_{METHOD}_TLO_true_FTL_{ft_layers}_OPT_{optstr}.json")
         with open(config_file, "w") as f:
             f.write(raw)
-        run_cmd = f"${{PYTHON}} -m AttentionSegmentation.main --config_file {config_file}"
+        run_cmd = f"python -m AttentionSegmentation.main --config_file {config_file}"
         scripts[script_no].append(run_cmd)
         config_count += 1
 # Now write the scripts
