@@ -1,4 +1,4 @@
-Flask==0.12.1
+Flask==1.0.0
 packaging==17.1
 pytest==4.4.1
 pytz==2018.4
@@ -11,16 +11,17 @@ matplotlib==3.0.3
 seaborn==0.9.0
 editdistance==0.4
 h5py==2.9.0
-nltk==3.3
+nltk==3.4.5
 numpy==1.16.3
 Unidecode==1.0.22
 pyhocon==0.3.35
-# tensorflow==2.0.0b1
+tensorflow==2.0.0b1
 Flask_Cors==3.0.7
 requests==2.21.0
 pytorch_pretrained_bert==0.6.2
 pandas==0.23.3
 spacy==2.1.4
-# torch==1.0.1.post2
+torch==1.0.1.post2
+preprocess==1.1.0
 scikit_learn==0.21.3
 tensorboardX==1.8
