@@ -17,7 +17,7 @@ Unidecode==1.0.22
 pyhocon==0.3.35
 tensorflow==2.0.0b1
 Flask_Cors==3.0.7
-requests==2.21.0
+requests==2.31.0
 pytorch_pretrained_bert==0.6.2
 pandas==0.23.3
 spacy==2.1.4
